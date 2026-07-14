@@ -22,8 +22,8 @@ Center all three rows. These fields are already limited to 15 tiles.
 ## When Games Appear
 
 - Live matching games rank first.
-- Upcoming matching games rank next, ordered by start time.
-- Recently completed games remain eligible for the configured number of hours.
+- Recently completed games rank next and remain eligible for the configured number of hours.
+- Upcoming matching games follow, ordered by start time.
 - Older finals are removed automatically.
 - If no favorite teams are selected for a league, all teams in that league are eligible.
 

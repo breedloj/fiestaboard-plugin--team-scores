@@ -87,6 +87,8 @@
       "home_team": {"description": "Home team abbreviation", "type": "string", "max_length": 4, "group": "primary", "example": "SF"},
       "away_score": {"description": "Away score", "type": "string", "max_length": 3, "group": "primary", "example": "4"},
       "home_score": {"description": "Home score", "type": "string", "max_length": 3, "group": "primary", "example": "2"},
+      "away_color": {"description": "Away-team result color tile", "type": "string", "max_length": 4, "group": "primary", "example": "{66}"},
+      "home_color": {"description": "Home-team result color tile", "type": "string", "max_length": 4, "group": "primary", "example": "{63}"},
       "state": {"description": "scheduled, live, final, or none", "type": "string", "max_length": 9, "group": "primary", "example": "final"},
       "status": {"description": "Game time, live detail, or final status", "type": "string", "max_length": 15, "group": "primary", "example": "FINAL"},
       "game_count": {"description": "Number of matching relevant games", "type": "number", "max_length": 2, "group": "primary", "example": "2"},

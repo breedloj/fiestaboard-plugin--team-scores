@@ -198,9 +198,9 @@ class FavoriteSportsPlugin(PluginBase):
         timestamp = _timestamp(game.get("starts_at"))
         if game["state"] == "live":
             return 0, timestamp
-        if game["state"] == "scheduled":
-            return 1, timestamp
-        return 2, -timestamp
+        if game["state"] == "final":
+            return 1, -timestamp
+        return 2, timestamp
 
     def _timezone(self) -> ZoneInfo:
         try:

@@ -6,9 +6,13 @@ on:
   pull_request:
     branches: [main]
 
+permissions:
+  contents: read
+
 jobs:
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/checkout@v4
@@ -21,7 +25,7 @@ jobs:
       - name: Install dependencies
         run: |
           pip install -r fiestaboard-core/requirements.txt
-          pip install pytest
+          pip install -r requirements-dev.txt
       - name: Set up plugin import
         run: |
           PLUGIN_ID=$(python -c "import json; print(json.load(open('manifest.json'))['id'])")
@@ -33,4 +37,3 @@ jobs:
           FIESTABOARD_ROOT: ${{ github.workspace }}/fiestaboard-core
           PYTHONPATH: "${{ github.workspace }}:${{ github.workspace }}/fiestaboard-core"
         run: pytest -q
-

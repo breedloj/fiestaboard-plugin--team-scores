@@ -41,6 +41,15 @@ def test_manifest_and_plugin_id():
     assert manifest()["version"] == "1.0.0"
 
 
+def test_fiestaboard_loader_accepts_standalone_repo(tmp_path):
+    from src.plugins.loader import PluginLoader
+
+    (tmp_path / "favorite_sports").symlink_to(ROOT, target_is_directory=True)
+    loader = PluginLoader(plugins_dir=tmp_path, external_dirs=[])
+    plugin = loader.load_plugin("favorite_sports")
+    assert plugin is not None, loader._load_errors.get("favorite_sports")
+
+
 def test_filters_and_ranks_mlb_favorite_first():
     module = load_plugin_module()
     plugin = module.Plugin(manifest())
@@ -92,6 +101,33 @@ def test_nfl_favorite_and_note_lines():
     assert result.data["league"] == "NFL"
     assert result.data["line2"] == "SEA AT SF"
     assert all(len(line) <= 15 for line in result.formatted_lines[:3])
+
+
+def test_recent_final_ranks_ahead_of_upcoming_game():
+    module = load_plugin_module()
+    plugin = module.Plugin(manifest())
+    plugin.config = {
+        "leagues": ["MLB"],
+        "mlb_teams": ["SEA"],
+        "timezone": "UTC",
+        "lookahead_days": 7,
+        "final_max_age_hours": 18,
+    }
+    payload = {
+        "dates": [{
+            "games": [
+                mlb_game(1, "SEA", "SF", "Final", "2026-07-13T18:00:00Z", 4, 2),
+                mlb_game(2, "SEA", "LAD", "Preview", "2026-07-14T20:00:00Z", 0, 0),
+            ]
+        }]
+    }
+    with patch.object(module.requests, "get", return_value=response(payload)), patch.object(
+        plugin, "_now", return_value=datetime(2026, 7, 13, 21, tzinfo=timezone.utc)
+    ):
+        result = plugin.fetch_data()
+
+    assert result.data["event_id"] == "1"
+    assert result.data["state"] == "final"
 
 
 def test_no_match_is_available_but_explicit():

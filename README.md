@@ -7,7 +7,7 @@ An installable FiestaBoard plugin for MLB and NFL scores centered on favorite te
 - MLB schedules and scores from the official MLB Stats API
 - NFL schedules and scores from ESPN's public scoreboard feed
 - Separate favorite-team selectors for MLB and NFL
-- Relevance order: live games, upcoming games, then recent finals
+- Relevance order: live games, recent finals, then upcoming games
 - Configurable final-score retention and upcoming-game window
 - Three ready-to-display fields designed for the 15x3 Vestaboard Note
 - No API key required
