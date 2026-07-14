@@ -3,13 +3,16 @@
 from __future__ import annotations
 
 import logging
+import math
+import threading
 from datetime import datetime, timedelta, timezone
 from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import requests
 
-from src.plugins.base import PluginBase, PluginResult
+from src.plugins.base import PluginBase, PluginResult, TriggerResult
+from src.triggers import TriggerPriority
 
 logger = logging.getLogger(__name__)
 
@@ -20,6 +23,11 @@ REQUEST_TIMEOUT = 20
 
 class FavoriteSportsPlugin(PluginBase):
     """Show the most relevant game involving a configured favorite team."""
+
+    def __init__(self, manifest: dict[str, Any]):
+        super().__init__(manifest)
+        self._trigger_lock = threading.Lock()
+        self._trigger_snapshot: dict[str, dict[str, str]] = {}
 
     @property
     def plugin_id(self) -> str:
@@ -63,6 +71,8 @@ class FavoriteSportsPlugin(PluginBase):
                 errors.append(f"NFL: {exc}")
 
         games = [game for game in games if self._is_relevant(game, now, lookahead_days, final_max_age)]
+        for game in games:
+            game["minutes_until_start"] = _minutes_until_start(game, now)
         games.sort(key=self._sort_key)
 
         if not games:
@@ -72,14 +82,81 @@ class FavoriteSportsPlugin(PluginBase):
             return PluginResult(available=True, data=data, formatted_lines=self._format_display(data))
 
         primary = games[0]
+        data = self._result_data(primary, games)
+        return PluginResult(available=True, data=data, formatted_lines=self._format_display(data))
+
+    def check_triggers(self) -> list[TriggerResult]:
+        result = self.get_data()
+        if not result.available or not result.data:
+            return []
+
+        games = result.data.get("games", [])
+        current = {
+            str(game.get("event_id", "")): _trigger_state(game)
+            for game in games
+            if game.get("event_id")
+        }
+        with self._trigger_lock:
+            previous = self._trigger_snapshot
+            self._trigger_snapshot = current
+
+        if not previous:
+            return []
+
+        duration = max(15, min(300, int(self.config.get("trigger_duration_seconds", 45))))
+        triggers: list[TriggerResult] = []
+        for game in games:
+            event_id = str(game.get("event_id", ""))
+            before = previous.get(event_id)
+            if before is None:
+                continue
+            event = self._detect_event(before, game)
+            if event == "none" or not self.config.get(f"trigger_on_{event}", event != "started"):
+                continue
+            data = self._result_data(game, games, event=event)
+            triggers.append(
+                TriggerResult(
+                    triggered=True,
+                    trigger_id=_trigger_id(event, game),
+                    priority=TriggerPriority.NOTABLE,
+                    duration_seconds=duration,
+                    data=data,
+                    message=data["formatted"],
+                )
+            )
+        return triggers
+
+    def on_config_change(self, old_config: dict[str, Any], new_config: dict[str, Any]) -> None:
+        with self._trigger_lock:
+            self._trigger_snapshot = {}
+
+    @staticmethod
+    def _detect_event(before: dict[str, str], game: dict[str, Any]) -> str:
+        state = str(game.get("state", ""))
+        if state == "final" and before["state"] != "final":
+            return "final"
+        scores = (str(game.get("away_score", "")), str(game.get("home_score", "")))
+        if state == "live" and scores != (before["away_score"], before["home_score"]):
+            return "score"
+        if state == "live" and before["state"] == "scheduled":
+            return "started"
+        return "none"
+
+    def _result_data(
+        self,
+        primary: dict[str, Any],
+        games: list[dict[str, Any]],
+        event: str = "none",
+    ) -> dict[str, Any]:
         data = {
             **primary,
+            "event": event,
             "game_count": len(games),
             "has_live_game": any(game["state"] == "live" for game in games),
             "games": games,
         }
         data.update(self._display_fields(primary))
-        return PluginResult(available=True, data=data, formatted_lines=self._format_display(data))
+        return data
 
     def _fetch_mlb(self, now: datetime, lookahead_days: int) -> list[dict[str, Any]]:
         params = {
@@ -246,6 +323,8 @@ class FavoriteSportsPlugin(PluginBase):
             "state": "none",
             "game_count": 0,
             "has_live_game": False,
+            "minutes_until_start": -1,
+            "event": "none",
             "games": [],
             "header": "FAVORITE SPORTS",
             "line1": "FAVORITE SPORTS",
@@ -285,6 +364,30 @@ def _game(
         "detailed_status": detailed_status,
         "starts_at": starts_at.isoformat() if starts_at else "",
     }
+
+
+def _minutes_until_start(game: dict[str, Any], now: datetime) -> int:
+    if game.get("state") != "scheduled":
+        return -1
+    starts_at = _parse_datetime(game.get("starts_at"), now.tzinfo)
+    if starts_at is None:
+        return -1
+    return max(0, math.ceil((starts_at - now).total_seconds() / 60))
+
+
+def _trigger_state(game: dict[str, Any]) -> dict[str, str]:
+    return {
+        "state": str(game.get("state", "")),
+        "away_score": str(game.get("away_score", "")),
+        "home_score": str(game.get("home_score", "")),
+    }
+
+
+def _trigger_id(event: str, game: dict[str, Any]) -> str:
+    event_id = str(game.get("event_id", "game"))
+    if event == "score":
+        return f"score_{event_id}_{game.get('away_score', '')}_{game.get('home_score', '')}"
+    return f"{event}_{event_id}"
 
 
 def _mlb_abbreviation(team: dict[str, Any], fallback: str) -> str:

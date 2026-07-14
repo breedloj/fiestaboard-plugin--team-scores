@@ -6,6 +6,7 @@
 4. Choose favorite teams separately for each league.
 5. Set the timezone used to display upcoming game times.
 6. Keep the default refresh and relevance settings initially.
+7. Choose **Favorite Sports for Note** as the trigger page.
 
 ## Recommended Note Page
 
@@ -28,3 +29,19 @@ Center all three rows. These fields are already limited to 15 tiles.
 - If no favorite teams are selected for a league, all teams in that league are eligible.
 
 MLB and NFL team settings are separate, so identical abbreviations cannot be confused across leagues.
+
+## Collections and Alerts
+
+To select the sports page during the 30 minutes before a game, add this rule to a variable-mode collection:
+
+```text
+AND(favorite_sports.state == "scheduled", favorite_sports.minutes_until_start >= 0, favorite_sports.minutes_until_start <= 30)
+```
+
+To keep the sports page selected throughout a live game, add:
+
+```text
+favorite_sports.state == "live"
+```
+
+Rules are for steady conditions. Use the plugin's **Show Score Alerts** and **Show Final Alerts** settings for momentary events. Those triggers briefly replace the current page, then FiestaBoard resumes the active schedule or collection automatically. Game-start alerts are optional and off by default.

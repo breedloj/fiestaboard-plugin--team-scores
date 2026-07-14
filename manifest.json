@@ -1,11 +1,12 @@
 {
   "id": "favorite_sports",
   "name": "Favorite Sports",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "MLB and NFL scores focused on the teams you actually follow.",
   "author": "Jonathan Breedlove",
   "icon": "trophy",
   "category": "entertainment",
+  "supports_triggers": true,
   "documentation": "README.md",
   "min_refresh_seconds": 60,
   "settings_schema": {
@@ -66,6 +67,31 @@
         "minimum": 1,
         "maximum": 48
       },
+      "trigger_on_score": {
+        "type": "boolean",
+        "title": "Show Score Alerts",
+        "description": "Briefly interrupt the current page when a score changes.",
+        "default": true
+      },
+      "trigger_on_final": {
+        "type": "boolean",
+        "title": "Show Final Alerts",
+        "description": "Briefly interrupt the current page when a game becomes final.",
+        "default": true
+      },
+      "trigger_on_started": {
+        "type": "boolean",
+        "title": "Show Game Start Alerts",
+        "description": "Briefly interrupt the current page when a game starts.",
+        "default": false
+      },
+      "trigger_duration_seconds": {
+        "type": "integer",
+        "title": "Alert Duration (seconds)",
+        "default": 45,
+        "minimum": 15,
+        "maximum": 300
+      },
       "refresh_seconds": {
         "type": "integer",
         "title": "Refresh Interval (seconds)",
@@ -93,6 +119,8 @@
       "status": {"description": "Game time, live detail, or final status", "type": "string", "max_length": 15, "group": "primary", "example": "FINAL"},
       "game_count": {"description": "Number of matching relevant games", "type": "number", "max_length": 2, "group": "primary", "example": "2"},
       "has_live_game": {"description": "Whether a favorite-team game is live", "type": "boolean", "max_length": 3, "group": "primary", "example": "Yes"},
+      "minutes_until_start": {"description": "Whole minutes until the primary scheduled game, or -1 otherwise", "type": "number", "max_length": 5, "group": "primary", "example": "30"},
+      "event": {"description": "Trigger event: started, score, final, or none", "type": "string", "max_length": 7, "group": "primary", "example": "score"},
       "line1": {"description": "Note-ready header", "type": "string", "max_length": 15, "group": "display", "example": "MLB LIVE"},
       "line2": {"description": "Note-ready matchup or score", "type": "string", "max_length": 15, "group": "display", "example": "SEA 4  SF 2"},
       "line3": {"description": "Note-ready status", "type": "string", "max_length": 15, "group": "display", "example": "BOT 7 1 OUT"},
@@ -101,7 +129,7 @@
     "arrays": {
       "games": {
         "label_field": "event_id",
-        "item_fields": ["league", "away_team", "home_team", "away_score", "home_score", "state", "status", "starts_at", "away_color", "home_color"]
+        "item_fields": ["league", "away_team", "home_team", "away_score", "home_score", "state", "status", "starts_at", "minutes_until_start", "away_color", "home_color"]
       }
     }
   },
@@ -114,7 +142,7 @@
     "games.*.state": 9,
     "games.*.status": 15
   },
-  "fiestaboard_version": ">=2.10.0",
+  "fiestaboard_version": ">=4.2.0",
   "demo": {
     "flagship": {
       "name": "Favorite Sports",

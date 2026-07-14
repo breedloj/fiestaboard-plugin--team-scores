@@ -38,7 +38,7 @@ def test_manifest_and_plugin_id():
     module = load_plugin_module()
     plugin = module.Plugin(manifest())
     assert plugin.plugin_id == "favorite_sports"
-    assert manifest()["version"] == "1.0.0"
+    assert manifest()["version"] == "1.1.0"
 
 
 def test_fiestaboard_loader_accepts_standalone_repo(tmp_path):
@@ -99,6 +99,7 @@ def test_nfl_favorite_and_note_lines():
 
     assert result.available
     assert result.data["league"] == "NFL"
+    assert result.data["minutes_until_start"] == 1920
     assert result.data["line2"] == "SEA AT SF"
     assert all(len(line) <= 15 for line in result.formatted_lines[:3])
 
@@ -145,6 +146,60 @@ def test_invalid_timezone_is_reported():
     module = load_plugin_module()
     plugin = module.Plugin(manifest())
     assert plugin.validate_config({"leagues": ["MLB"], "timezone": "Mars/Olympus"})
+
+
+def test_score_change_fires_notable_trigger_once():
+    module = load_plugin_module()
+    plugin = module.Plugin(manifest())
+    plugin.config = {"trigger_on_score": True, "trigger_duration_seconds": 45}
+    before = trigger_result(module, "live", "1", "0")
+    after = trigger_result(module, "live", "2", "0")
+    with patch.object(plugin, "get_data", side_effect=[before, after, after]):
+        assert plugin.check_triggers() == []
+        triggers = plugin.check_triggers()
+        assert len(triggers) == 1
+        assert triggers[0].trigger_id == "score_mlb-1_2_0"
+        assert triggers[0].priority == 50
+        assert triggers[0].duration_seconds == 45
+        assert triggers[0].data["event"] == "score"
+        assert plugin.check_triggers() == []
+
+
+def test_final_change_fires_trigger():
+    module = load_plugin_module()
+    plugin = module.Plugin(manifest())
+    plugin.config = {"trigger_on_final": True}
+    before = trigger_result(module, "live", "4", "2")
+    after = trigger_result(module, "final", "4", "2")
+    with patch.object(plugin, "get_data", side_effect=[before, after]):
+        assert plugin.check_triggers() == []
+        trigger = plugin.check_triggers()[0]
+    assert trigger.trigger_id == "final_mlb-1"
+    assert trigger.data["line3"] == "FINAL"
+
+
+def trigger_result(module, state, away_score, home_score):
+    game = {
+        "league": "MLB",
+        "event_id": "mlb-1",
+        "away_team": "SEA",
+        "home_team": "SF",
+        "away_score": away_score,
+        "home_score": home_score,
+        "state": state,
+        "status": "FINAL" if state == "final" else "BOT 7 1 OUT",
+        "starts_at": "2026-07-13T20:00:00+00:00",
+        "minutes_until_start": -1,
+    }
+    return module.PluginResult(
+        available=True,
+        data={
+            **game,
+            "game_count": 1,
+            "has_live_game": state == "live",
+            "games": [game],
+        },
+    )
 
 
 def mlb_game(game_id, away, home, state, starts_at, away_score, home_score):

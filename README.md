@@ -9,6 +9,8 @@ An installable FiestaBoard plugin for MLB and NFL scores centered on favorite te
 - Separate favorite-team selectors for MLB and NFL
 - Relevance order: live games, recent finals, then upcoming games
 - Configurable final-score retention and upcoming-game window
+- Variable-mode timing through `minutes_until_start`
+- Optional score and final triggers that briefly interrupt the normal rotation
 - Three ready-to-display fields designed for the 15x3 Vestaboard Note
 - No API key required
 
@@ -43,6 +45,8 @@ SUN 1:25 PM
 ## Selection Behavior
 
 Configure MLB and NFL favorites independently in the FiestaBoard UI. If a league's favorite list is empty, all games from that league are eligible. The primary fields always describe the highest-ranked relevant game.
+
+Use `favorite_sports.state` and `favorite_sports.minutes_until_start` for collection rules. Score and final changes are better handled by FiestaBoard triggers: enable the alert types, choose **Favorite Sports for Note** as the trigger page, and the normal page or collection resumes when the alert expires.
 
 See [docs/SETUP.md](docs/SETUP.md) for configuration details.
 
