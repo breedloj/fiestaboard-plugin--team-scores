@@ -1,0 +1,150 @@
+{
+  "id": "favorite_sports",
+  "name": "Favorite Sports",
+  "version": "1.0.0",
+  "description": "MLB and NFL scores focused on the teams you actually follow.",
+  "author": "Jonathan Breedlove",
+  "icon": "trophy",
+  "category": "entertainment",
+  "documentation": "README.md",
+  "min_refresh_seconds": 60,
+  "settings_schema": {
+    "type": "object",
+    "properties": {
+      "leagues": {
+        "type": "array",
+        "title": "Leagues",
+        "description": "Choose one or both leagues.",
+        "items": {"type": "string", "enum": ["MLB", "NFL"]},
+        "default": ["MLB", "NFL"],
+        "minItems": 1,
+        "uniqueItems": true
+      },
+      "mlb_teams": {
+        "type": "array",
+        "title": "Favorite MLB Teams",
+        "description": "Leave empty to include every MLB game.",
+        "items": {
+          "type": "string",
+          "enum": ["AZ", "ATL", "ATH", "BAL", "BOS", "CHC", "CWS", "CIN", "CLE", "COL", "DET", "HOU", "KC", "LAA", "LAD", "MIA", "MIL", "MIN", "NYM", "NYY", "PHI", "PIT", "SD", "SEA", "SF", "STL", "TB", "TEX", "TOR", "WSH"],
+          "enumNames": ["Arizona Diamondbacks", "Atlanta Braves", "Athletics", "Baltimore Orioles", "Boston Red Sox", "Chicago Cubs", "Chicago White Sox", "Cincinnati Reds", "Cleveland Guardians", "Colorado Rockies", "Detroit Tigers", "Houston Astros", "Kansas City Royals", "Los Angeles Angels", "Los Angeles Dodgers", "Miami Marlins", "Milwaukee Brewers", "Minnesota Twins", "New York Mets", "New York Yankees", "Philadelphia Phillies", "Pittsburgh Pirates", "San Diego Padres", "Seattle Mariners", "San Francisco Giants", "St. Louis Cardinals", "Tampa Bay Rays", "Texas Rangers", "Toronto Blue Jays", "Washington Nationals"]
+        },
+        "default": [],
+        "maxItems": 10,
+        "uniqueItems": true
+      },
+      "nfl_teams": {
+        "type": "array",
+        "title": "Favorite NFL Teams",
+        "description": "Leave empty to include every NFL game.",
+        "items": {
+          "type": "string",
+          "enum": ["ARI", "ATL", "BAL", "BUF", "CAR", "CHI", "CIN", "CLE", "DAL", "DEN", "DET", "GB", "HOU", "IND", "JAX", "KC", "LV", "LAC", "LAR", "MIA", "MIN", "NE", "NO", "NYG", "NYJ", "PHI", "PIT", "SF", "SEA", "TB", "TEN", "WSH"],
+          "enumNames": ["Arizona Cardinals", "Atlanta Falcons", "Baltimore Ravens", "Buffalo Bills", "Carolina Panthers", "Chicago Bears", "Cincinnati Bengals", "Cleveland Browns", "Dallas Cowboys", "Denver Broncos", "Detroit Lions", "Green Bay Packers", "Houston Texans", "Indianapolis Colts", "Jacksonville Jaguars", "Kansas City Chiefs", "Las Vegas Raiders", "Los Angeles Chargers", "Los Angeles Rams", "Miami Dolphins", "Minnesota Vikings", "New England Patriots", "New Orleans Saints", "New York Giants", "New York Jets", "Philadelphia Eagles", "Pittsburgh Steelers", "San Francisco 49ers", "Seattle Seahawks", "Tampa Bay Buccaneers", "Tennessee Titans", "Washington Commanders"]
+        },
+        "default": [],
+        "maxItems": 10,
+        "uniqueItems": true
+      },
+      "timezone": {
+        "type": "string",
+        "title": "Timezone",
+        "description": "IANA timezone used for game times.",
+        "default": "America/Los_Angeles"
+      },
+      "lookahead_days": {
+        "type": "integer",
+        "title": "Upcoming Game Window (days)",
+        "default": 7,
+        "minimum": 1,
+        "maximum": 14
+      },
+      "final_max_age_hours": {
+        "type": "integer",
+        "title": "Keep Final Scores (hours)",
+        "default": 18,
+        "minimum": 1,
+        "maximum": 48
+      },
+      "refresh_seconds": {
+        "type": "integer",
+        "title": "Refresh Interval (seconds)",
+        "default": 120,
+        "minimum": 60,
+        "maximum": 3600
+      }
+    },
+    "required": ["leagues"]
+  },
+  "variables": {
+    "groups": {
+      "primary": {"label": "Most Relevant Game"},
+      "display": {"label": "Ready-to-Display"}
+    },
+    "simple": {
+      "league": {"description": "League for the primary game", "type": "string", "max_length": 3, "group": "primary", "example": "MLB"},
+      "away_team": {"description": "Away team abbreviation", "type": "string", "max_length": 4, "group": "primary", "example": "SEA"},
+      "home_team": {"description": "Home team abbreviation", "type": "string", "max_length": 4, "group": "primary", "example": "SF"},
+      "away_score": {"description": "Away score", "type": "string", "max_length": 3, "group": "primary", "example": "4"},
+      "home_score": {"description": "Home score", "type": "string", "max_length": 3, "group": "primary", "example": "2"},
+      "state": {"description": "scheduled, live, final, or none", "type": "string", "max_length": 9, "group": "primary", "example": "final"},
+      "status": {"description": "Game time, live detail, or final status", "type": "string", "max_length": 15, "group": "primary", "example": "FINAL"},
+      "game_count": {"description": "Number of matching relevant games", "type": "number", "max_length": 2, "group": "primary", "example": "2"},
+      "has_live_game": {"description": "Whether a favorite-team game is live", "type": "boolean", "max_length": 3, "group": "primary", "example": "Yes"},
+      "line1": {"description": "Note-ready header", "type": "string", "max_length": 15, "group": "display", "example": "MLB LIVE"},
+      "line2": {"description": "Note-ready matchup or score", "type": "string", "max_length": 15, "group": "display", "example": "SEA 4  SF 2"},
+      "line3": {"description": "Note-ready status", "type": "string", "max_length": 15, "group": "display", "example": "BOT 7 1 OUT"},
+      "formatted": {"description": "Compact primary game", "type": "string", "max_length": 22, "group": "display", "example": "SEA 4 SF 2 FINAL"}
+    },
+    "arrays": {
+      "games": {
+        "label_field": "event_id",
+        "item_fields": ["league", "away_team", "home_team", "away_score", "home_score", "state", "status", "starts_at", "away_color", "home_color"]
+      }
+    }
+  },
+  "max_lengths": {
+    "games.*.league": 3,
+    "games.*.away_team": 4,
+    "games.*.home_team": 4,
+    "games.*.away_score": 3,
+    "games.*.home_score": 3,
+    "games.*.state": 9,
+    "games.*.status": 15
+  },
+  "fiestaboard_version": ">=2.10.0",
+  "demo": {
+    "flagship": {
+      "name": "Favorite Sports",
+      "template": [
+        "FAVORITE SPORTS",
+        "{{favorite_sports.formatted}}",
+        "",
+        "",
+        "",
+        "{{favorite_sports.game_count}} MATCHED GAMES"
+      ],
+      "line_metadata": [
+        {"alignment": "center", "wrap": false},
+        {"alignment": "center", "wrap": false},
+        {"alignment": "left", "wrap": false},
+        {"alignment": "left", "wrap": false},
+        {"alignment": "left", "wrap": false},
+        {"alignment": "center", "wrap": false}
+      ]
+    },
+    "note": {
+      "name": "Favorite Sports for Note",
+      "template": [
+        "{{favorite_sports.line1}}",
+        "{{favorite_sports.line2}}",
+        "{{favorite_sports.line3}}"
+      ],
+      "line_metadata": [
+        {"alignment": "center", "wrap": false},
+        {"alignment": "center", "wrap": false},
+        {"alignment": "center", "wrap": false}
+      ]
+    }
+  }
+}

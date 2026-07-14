@@ -1,0 +1,388 @@
+"""Favorite-team MLB and NFL scores for FiestaBoard."""
+
+from __future__ import annotations
+
+import logging
+from datetime import datetime, timedelta, timezone
+from typing import Any
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+import requests
+
+from src.plugins.base import PluginBase, PluginResult
+
+logger = logging.getLogger(__name__)
+
+MLB_SCHEDULE_URL = "https://statsapi.mlb.com/api/v1/schedule"
+NFL_SCOREBOARD_URL = "https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard"
+REQUEST_TIMEOUT = 20
+
+
+class FavoriteSportsPlugin(PluginBase):
+    """Show the most relevant game involving a configured favorite team."""
+
+    @property
+    def plugin_id(self) -> str:
+        return "favorite_sports"
+
+    def validate_config(self, config: dict[str, Any]) -> list[str]:
+        errors: list[str] = []
+        leagues = config.get("leagues", ["MLB", "NFL"])
+        if not leagues:
+            errors.append("Select at least one league")
+        invalid = sorted(set(leagues) - {"MLB", "NFL"})
+        if invalid:
+            errors.append(f"Unsupported leagues: {', '.join(invalid)}")
+        try:
+            ZoneInfo(str(config.get("timezone", "UTC")))
+        except ZoneInfoNotFoundError:
+            errors.append("Timezone must be a valid IANA name, such as America/Los_Angeles")
+        return errors
+
+    def fetch_data(self) -> PluginResult:
+        tz = self._timezone()
+        now = self._now(tz)
+        leagues = self.config.get("leagues", ["MLB", "NFL"])
+        lookahead_days = max(1, min(14, int(self.config.get("lookahead_days", 7))))
+        final_max_age = timedelta(hours=max(1, float(self.config.get("final_max_age_hours", 18))))
+        games: list[dict[str, Any]] = []
+        errors: list[str] = []
+
+        if "MLB" in leagues:
+            try:
+                games.extend(self._fetch_mlb(now, lookahead_days))
+            except Exception as exc:  # Keep one provider failure from hiding the other league.
+                logger.warning("MLB fetch failed: %s", exc)
+                errors.append(f"MLB: {exc}")
+
+        if "NFL" in leagues:
+            try:
+                games.extend(self._fetch_nfl(now, lookahead_days))
+            except Exception as exc:
+                logger.warning("NFL fetch failed: %s", exc)
+                errors.append(f"NFL: {exc}")
+
+        games = [game for game in games if self._is_relevant(game, now, lookahead_days, final_max_age)]
+        games.sort(key=self._sort_key)
+
+        if not games:
+            if errors:
+                return PluginResult(available=False, error="; ".join(errors))
+            data = self._empty_data()
+            return PluginResult(available=True, data=data, formatted_lines=self._format_display(data))
+
+        primary = games[0]
+        data = {
+            **primary,
+            "game_count": len(games),
+            "has_live_game": any(game["state"] == "live" for game in games),
+            "games": games,
+        }
+        data.update(self._display_fields(primary))
+        return PluginResult(available=True, data=data, formatted_lines=self._format_display(data))
+
+    def _fetch_mlb(self, now: datetime, lookahead_days: int) -> list[dict[str, Any]]:
+        params = {
+            "sportId": 1,
+            "startDate": (now.date() - timedelta(days=1)).isoformat(),
+            "endDate": (now.date() + timedelta(days=lookahead_days)).isoformat(),
+            "hydrate": "team,linescore",
+        }
+        response = requests.get(MLB_SCHEDULE_URL, params=params, timeout=REQUEST_TIMEOUT)
+        response.raise_for_status()
+        favorites = {str(team).upper() for team in self.config.get("mlb_teams", [])}
+        games: list[dict[str, Any]] = []
+        for date_group in response.json().get("dates", []):
+            for raw in date_group.get("games", []):
+                game = self._parse_mlb_game(raw, now.tzinfo)
+                if not favorites or {game["away_team"], game["home_team"]} & favorites:
+                    games.append(game)
+        return games
+
+    def _fetch_nfl(self, now: datetime, lookahead_days: int) -> list[dict[str, Any]]:
+        params = {
+            "dates": (
+                f"{(now.date() - timedelta(days=1)).strftime('%Y%m%d')}-"
+                f"{(now.date() + timedelta(days=lookahead_days)).strftime('%Y%m%d')}"
+            )
+        }
+        response = requests.get(NFL_SCOREBOARD_URL, params=params, timeout=REQUEST_TIMEOUT)
+        response.raise_for_status()
+        favorites = {str(team).upper() for team in self.config.get("nfl_teams", [])}
+        games: list[dict[str, Any]] = []
+        for event in response.json().get("events", []):
+            game = self._parse_nfl_game(event, now.tzinfo)
+            if game and (not favorites or {game["away_team"], game["home_team"]} & favorites):
+                games.append(game)
+        return games
+
+    def _parse_mlb_game(self, raw: dict[str, Any], tz: Any) -> dict[str, Any]:
+        teams = raw.get("teams", {})
+        away = teams.get("away", {})
+        home = teams.get("home", {})
+        status = raw.get("status", {})
+        abstract = str(status.get("abstractGameState", "Preview")).lower()
+        state = "live" if abstract == "live" else "final" if abstract == "final" else "scheduled"
+        starts_at = _parse_datetime(raw.get("gameDate"), tz)
+        away_team = _mlb_abbreviation(away.get("team", {}), "AWAY")
+        home_team = _mlb_abbreviation(home.get("team", {}), "HOME")
+        detail = (
+            _mlb_detail(raw)
+            if state == "live"
+            else "FINAL"
+            if state == "final"
+            else _scheduled_status(str(status.get("detailedState", "")), starts_at)
+        )
+        return _game(
+            league="MLB",
+            event_id=str(raw.get("gamePk", "")),
+            away_team=away_team,
+            home_team=home_team,
+            away_score=_score(away, state),
+            home_score=_score(home, state),
+            state=state,
+            status=detail,
+            detailed_status=str(status.get("detailedState", "")),
+            starts_at=starts_at,
+        )
+
+    def _parse_nfl_game(self, event: dict[str, Any], tz: Any) -> dict[str, Any] | None:
+        competition = (event.get("competitions") or [{}])[0]
+        competitors = competition.get("competitors", [])
+        if len(competitors) < 2:
+            return None
+        away = _competitor(competitors, "away")
+        home = _competitor(competitors, "home")
+        status = competition.get("status", {})
+        status_type = status.get("type", {})
+        state = "final" if status_type.get("completed") else "live" if status_type.get("state") == "in" else "scheduled"
+        starts_at = _parse_datetime(event.get("date"), tz)
+        detail = (
+            _nfl_detail(status)
+            if state == "live"
+            else "FINAL"
+            if state == "final"
+            else _scheduled_status(str(status_type.get("description", "")), starts_at)
+        )
+        return _game(
+            league="NFL",
+            event_id=str(event.get("id", "")),
+            away_team=away["team"],
+            home_team=home["team"],
+            away_score=away["score"] if state != "scheduled" else "",
+            home_score=home["score"] if state != "scheduled" else "",
+            state=state,
+            status=detail,
+            detailed_status=str(status_type.get("shortDetail", "")),
+            starts_at=starts_at,
+        )
+
+    def _is_relevant(
+        self,
+        game: dict[str, Any],
+        now: datetime,
+        lookahead_days: int,
+        final_max_age: timedelta,
+    ) -> bool:
+        starts_at = _parse_datetime(game.get("starts_at"), now.tzinfo)
+        if game["state"] == "live":
+            return True
+        if starts_at is None:
+            return game["state"] != "final"
+        if game["state"] == "final":
+            return now - starts_at <= final_max_age
+        return starts_at <= now + timedelta(days=lookahead_days)
+
+    @staticmethod
+    def _sort_key(game: dict[str, Any]) -> tuple[int, float]:
+        timestamp = _timestamp(game.get("starts_at"))
+        if game["state"] == "live":
+            return 0, timestamp
+        if game["state"] == "scheduled":
+            return 1, timestamp
+        return 2, -timestamp
+
+    def _timezone(self) -> ZoneInfo:
+        try:
+            return ZoneInfo(str(self.config.get("timezone", "UTC")))
+        except ZoneInfoNotFoundError:
+            return ZoneInfo("UTC")
+
+    @staticmethod
+    def _now(tz: ZoneInfo) -> datetime:
+        return datetime.now(tz)
+
+    def _display_fields(self, game: dict[str, Any]) -> dict[str, str]:
+        if game["state"] == "scheduled":
+            line2 = f"{game['away_team']} AT {game['home_team']}"
+            line3 = game["status"]
+        else:
+            line2 = f"{game['away_team']} {game['away_score']}  {game['home_team']} {game['home_score']}"
+            line3 = game["status"]
+        return {
+            "header": f"{game['league']} {game['state'].upper()}",
+            "line1": _fit(f"{game['league']} {game['state'].upper()}", 15),
+            "line2": _fit(line2, 15),
+            "line3": _fit(line3, 15),
+            "formatted": _fit(f"{line2} {line3}", 22),
+        }
+
+    def _format_display(self, data: dict[str, Any]) -> list[str]:
+        device_type = getattr(self.board, "device_type", "flagship") if self.board else "flagship"
+        if device_type == "note":
+            return [data.get("line1", "SPORTS"), data.get("line2", "NO MATCHED GAME"), data.get("line3", "")]
+        lines = [data.get("header", "FAVORITE SPORTS").center(22)]
+        for game in data.get("games", [])[:2]:
+            display = self._display_fields(game)
+            lines.extend([_fit(display["line2"], 22), _fit(display["line3"], 22)])
+        while len(lines) < 6:
+            lines.append("")
+        return lines[:6]
+
+    @staticmethod
+    def _empty_data() -> dict[str, Any]:
+        return {
+            "league": "",
+            "state": "none",
+            "game_count": 0,
+            "has_live_game": False,
+            "games": [],
+            "header": "FAVORITE SPORTS",
+            "line1": "FAVORITE SPORTS",
+            "line2": "NO MATCHED GAME",
+            "line3": "",
+            "formatted": "NO MATCHED GAME",
+        }
+
+
+def _game(
+    *,
+    league: str,
+    event_id: str,
+    away_team: str,
+    home_team: str,
+    away_score: str,
+    home_score: str,
+    state: str,
+    status: str,
+    detailed_status: str,
+    starts_at: datetime | None,
+) -> dict[str, Any]:
+    margin = _margin(away_score, home_score)
+    return {
+        "league": league,
+        "event_id": event_id,
+        "away_team": away_team,
+        "home_team": home_team,
+        "away_score": away_score,
+        "home_score": home_score,
+        "away_margin": margin,
+        "home_margin": -margin,
+        "away_color": _team_color(margin, state),
+        "home_color": _team_color(-margin, state),
+        "state": state,
+        "status": status,
+        "detailed_status": detailed_status,
+        "starts_at": starts_at.isoformat() if starts_at else "",
+    }
+
+
+def _mlb_abbreviation(team: dict[str, Any], fallback: str) -> str:
+    return str(team.get("abbreviation") or team.get("teamCode") or team.get("name") or fallback).upper()
+
+
+def _score(side: dict[str, Any], state: str) -> str:
+    if state == "scheduled":
+        return ""
+    value = side.get("score")
+    return "0" if value is None else str(value)
+
+
+def _competitor(items: list[dict[str, Any]], side: str) -> dict[str, str]:
+    item = next((entry for entry in items if entry.get("homeAway") == side), items[0])
+    team = item.get("team", {})
+    return {
+        "team": str(team.get("abbreviation") or team.get("shortDisplayName") or side).upper(),
+        "score": str(item.get("score") or "0"),
+    }
+
+
+def _mlb_detail(raw: dict[str, Any]) -> str:
+    linescore = raw.get("linescore", {})
+    inning = linescore.get("currentInning")
+    half = str(linescore.get("inningHalf", "")).upper()
+    prefix = {"BOTTOM": "BOT", "MIDDLE": "MID"}.get(half, half[:3])
+    parts = [part for part in (prefix, str(inning or "")) if part]
+    outs = linescore.get("outs")
+    if outs not in {None, ""}:
+        parts.extend([str(outs), "OUT" if str(outs) == "1" else "OUTS"])
+    return " ".join(parts) or "LIVE"
+
+
+def _nfl_detail(status: dict[str, Any]) -> str:
+    period = status.get("period")
+    clock = str(status.get("displayClock", "")).strip()
+    parts = [f"Q{period}" if period else "LIVE"]
+    if clock and clock != "0:00":
+        parts.append(clock)
+    return " ".join(parts)
+
+
+def _start_label(starts_at: datetime | None) -> str:
+    if not starts_at:
+        return "SCHEDULED"
+    return starts_at.strftime("%a %I:%M %p").replace(" 0", " ").upper()
+
+
+def _scheduled_status(detail: str, starts_at: datetime | None) -> str:
+    normalized = detail.upper()
+    if "POSTPON" in normalized:
+        return "POSTPONED"
+    if "CANCEL" in normalized:
+        return "CANCELLED"
+    return _start_label(starts_at)
+
+
+def _parse_datetime(value: Any, tz: Any) -> datetime | None:
+    if isinstance(value, datetime):
+        parsed = value
+    else:
+        raw = str(value or "")
+        if not raw:
+            return None
+        try:
+            parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        except ValueError:
+            return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(tz)
+
+
+def _timestamp(value: Any) -> float:
+    parsed = _parse_datetime(value, timezone.utc)
+    return parsed.timestamp() if parsed else 0
+
+
+def _margin(away: Any, home: Any) -> float:
+    try:
+        return float(away) - float(home)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _team_color(margin: float, state: str) -> str:
+    if state == "scheduled":
+        return "{67}"
+    if margin > 0:
+        return "{66}"
+    if margin < 0:
+        return "{63}"
+    return "{65}"
+
+
+def _fit(value: Any, width: int) -> str:
+    return str(value or "").strip()[:width]
+
+
+Plugin = FavoriteSportsPlugin

@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: Fiestaboard/FiestaBoard
+          path: fiestaboard-core
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install dependencies
+        run: |
+          pip install -r fiestaboard-core/requirements.txt
+          pip install pytest
+      - name: Set up plugin import
+        run: |
+          PLUGIN_ID=$(python -c "import json; print(json.load(open('manifest.json'))['id'])")
+          mkdir -p plugins
+          touch plugins/__init__.py
+          ln -s .. "plugins/$PLUGIN_ID"
+      - name: Run tests
+        env:
+          FIESTABOARD_ROOT: ${{ github.workspace }}/fiestaboard-core
+          PYTHONPATH: "${{ github.workspace }}:${{ github.workspace }}/fiestaboard-core"
+        run: pytest -q
+
