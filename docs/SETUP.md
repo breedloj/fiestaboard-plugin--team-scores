@@ -1,5 +1,7 @@
 # Favorite Sports Setup
 
+![Favorite Sports on a Vestaboard Note](./board-display.png)
+
 1. Install the plugin from its public GitHub HTTPS URL.
 2. Open **Integrations** and enable **Favorite Sports**.
 3. Select MLB, NFL, or both.
@@ -45,3 +47,22 @@ favorite_sports.state == "live"
 ```
 
 Rules are for steady conditions. Use the plugin's **Show Score Alerts** and **Show Final Alerts** settings for momentary events. Those triggers briefly replace the current page, then FiestaBoard resumes the active schedule or collection automatically. Game-start alerts are optional and off by default.
+
+## Troubleshooting
+
+### No matching game appears
+
+- Confirm the desired league is enabled.
+- Confirm the team is selected, or leave that league's team list empty to include every game.
+- Increase **Upcoming Game Window** if the next game is more than seven days away.
+- Recent final scores disappear after **Keep Final Scores** expires.
+
+### Alerts do not appear
+
+- Enable the corresponding score, final, or game-start alert setting.
+- Select a trigger page in FiestaBoard for this plugin.
+- The first successful fetch establishes a baseline and intentionally emits no alert.
+
+### One league is temporarily unavailable
+
+MLB and NFL are fetched independently. A working provider can continue supplying games if the other provider fails; FiestaBoard logs the provider error for diagnosis.

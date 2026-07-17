@@ -4,6 +4,7 @@
   "version": "1.1.0",
   "description": "MLB and NFL scores focused on the teams you actually follow.",
   "author": "Jonathan Breedlove",
+  "repository": "https://github.com/breedloj/fiestaboard-plugin--favorite-sports",
   "icon": "trophy",
   "category": "entertainment",
   "supports_triggers": true,
@@ -135,14 +136,27 @@
   },
   "max_lengths": {
     "games.*.league": 3,
+    "games.*.event_id": 32,
     "games.*.away_team": 4,
     "games.*.home_team": 4,
     "games.*.away_score": 3,
     "games.*.home_score": 3,
     "games.*.state": 9,
-    "games.*.status": 15
+    "games.*.status": 15,
+    "games.*.starts_at": 32,
+    "games.*.minutes_until_start": 5,
+    "games.*.away_color": 4,
+    "games.*.home_color": 4
   },
   "fiestaboard_version": ">=4.2.0",
+  "screenshots": [
+    {
+      "src": "docs/board-display.png",
+      "alt": "Favorite Sports displaying an upcoming MLB game on a Vestaboard Note",
+      "caption": "Note-ready favorite-team schedule with matchup and local start time",
+      "primary": true
+    }
+  ],
   "demo": {
     "flagship": {
       "name": "Favorite Sports",
