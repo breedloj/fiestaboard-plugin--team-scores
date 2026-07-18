@@ -1,8 +1,8 @@
 {
   "id": "favorite_sports",
   "name": "Favorite Sports",
-  "version": "1.1.0",
-  "description": "MLB and NFL scores focused on the teams you actually follow.",
+  "version": "1.2.0",
+  "description": "MLB and NFL schedules, live scores, and alerts for your favorite teams.",
   "author": "Jonathan Breedlove",
   "repository": "https://github.com/breedloj/fiestaboard-plugin--favorite-sports",
   "icon": "trophy",
@@ -16,7 +16,7 @@
       "leagues": {
         "type": "array",
         "title": "Leagues",
-        "description": "Choose one or both leagues.",
+        "description": "Choose MLB, NFL, or both.",
         "items": {"type": "string", "enum": ["MLB", "NFL"]},
         "default": ["MLB", "NFL"],
         "minItems": 1,
@@ -64,7 +64,7 @@
       "final_max_age_hours": {
         "type": "integer",
         "title": "Keep Final Scores (hours)",
-        "default": 18,
+        "default": 12,
         "minimum": 1,
         "maximum": 48
       },
@@ -84,7 +84,7 @@
         "type": "boolean",
         "title": "Show Game Start Alerts",
         "description": "Briefly interrupt the current page when a game starts.",
-        "default": false
+        "default": true
       },
       "trigger_duration_seconds": {
         "type": "integer",
@@ -110,14 +110,19 @@
     },
     "simple": {
       "league": {"description": "League for the primary game", "type": "string", "max_length": 3, "group": "primary", "example": "MLB"},
+      "event_id": {"description": "Provider event identifier", "type": "string", "max_length": 32, "group": "primary", "example": "777001"},
       "away_team": {"description": "Away team abbreviation", "type": "string", "max_length": 4, "group": "primary", "example": "SEA"},
       "home_team": {"description": "Home team abbreviation", "type": "string", "max_length": 4, "group": "primary", "example": "SF"},
       "away_score": {"description": "Away score", "type": "string", "max_length": 3, "group": "primary", "example": "4"},
       "home_score": {"description": "Home score", "type": "string", "max_length": 3, "group": "primary", "example": "2"},
+      "away_margin": {"description": "Away score minus home score", "type": "number", "max_length": 5, "group": "primary", "example": "2"},
+      "home_margin": {"description": "Home score minus away score", "type": "number", "max_length": 5, "group": "primary", "example": "-2"},
       "away_color": {"description": "Away-team result color tile", "type": "string", "max_length": 4, "group": "primary", "example": "{66}"},
       "home_color": {"description": "Home-team result color tile", "type": "string", "max_length": 4, "group": "primary", "example": "{63}"},
       "state": {"description": "scheduled, live, final, or none", "type": "string", "max_length": 9, "group": "primary", "example": "final"},
       "status": {"description": "Game time, live detail, or final status", "type": "string", "max_length": 15, "group": "primary", "example": "FINAL"},
+      "detailed_status": {"description": "Provider-specific game status", "type": "string", "max_length": 32, "group": "primary", "example": "In Progress"},
+      "starts_at": {"description": "Scheduled start time in ISO 8601 format", "type": "string", "max_length": 32, "group": "primary", "example": "2026-07-18T19:10:00-07:00"},
       "game_count": {"description": "Number of matching relevant games", "type": "number", "max_length": 2, "group": "primary", "example": "2"},
       "has_live_game": {"description": "Whether a favorite-team game is live", "type": "boolean", "max_length": 3, "group": "primary", "example": "Yes"},
       "minutes_until_start": {"description": "Whole minutes until the primary scheduled game, or -1 otherwise", "type": "number", "max_length": 5, "group": "primary", "example": "30"},
@@ -130,7 +135,7 @@
     "arrays": {
       "games": {
         "label_field": "event_id",
-        "item_fields": ["league", "away_team", "home_team", "away_score", "home_score", "state", "status", "starts_at", "minutes_until_start", "away_color", "home_color"]
+        "item_fields": ["event_id", "league", "away_team", "home_team", "away_score", "home_score", "away_margin", "home_margin", "state", "status", "detailed_status", "starts_at", "minutes_until_start", "away_color", "home_color"]
       }
     }
   },
@@ -141,8 +146,11 @@
     "games.*.home_team": 4,
     "games.*.away_score": 3,
     "games.*.home_score": 3,
+    "games.*.away_margin": 5,
+    "games.*.home_margin": 5,
     "games.*.state": 9,
     "games.*.status": 15,
+    "games.*.detailed_status": 32,
     "games.*.starts_at": 32,
     "games.*.minutes_until_start": 5,
     "games.*.away_color": 4,

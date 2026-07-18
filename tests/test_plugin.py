@@ -7,6 +7,8 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
+import pytest
+
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -38,7 +40,8 @@ def test_manifest_and_plugin_id():
     module = load_plugin_module()
     plugin = module.Plugin(manifest())
     assert plugin.plugin_id == "favorite_sports"
-    assert manifest()["version"] == "1.1.0"
+    assert manifest()["version"] == "1.2.0"
+    assert manifest()["settings_schema"]["properties"]["trigger_on_started"]["default"] is True
 
 
 def test_fiestaboard_loader_accepts_standalone_repo(tmp_path):
@@ -91,7 +94,7 @@ def test_nfl_favorite_and_note_lines():
         "final_max_age_hours": 18,
     }
     payload = {"events": [nfl_game("SEA", "SF", "2026-07-14T20:00:00Z")]}
-    with patch.object(module.requests, "get", return_value=response(payload)), patch.object(
+    with patch.object(module.requests, "get", return_value=response(payload)) as request, patch.object(
         plugin, "_now", return_value=datetime(2026, 7, 13, 12, tzinfo=timezone.utc)
     ):
         with plugin._bound_board(SimpleNamespace(device_type="note")):
@@ -102,6 +105,7 @@ def test_nfl_favorite_and_note_lines():
     assert result.data["minutes_until_start"] == 1920
     assert result.data["line2"] == "SEA AT SF"
     assert all(len(line) <= 15 for line in result.formatted_lines[:3])
+    assert request.call_args.args[0] == module.ESPN_LEAGUES["NFL"]["url"]
 
 
 def test_recent_final_ranks_ahead_of_upcoming_game():
@@ -140,12 +144,31 @@ def test_no_match_is_available_but_explicit():
     assert result.available
     assert result.data["game_count"] == 0
     assert result.data["line2"] == "NO MATCHED GAME"
+    assert set(manifest()["variables"]["simple"]) <= set(result.data)
 
 
 def test_invalid_timezone_is_reported():
     module = load_plugin_module()
     plugin = module.Plugin(manifest())
     assert plugin.validate_config({"leagues": ["MLB"], "timezone": "Mars/Olympus"})
+
+
+def test_malformed_saved_config_returns_a_useful_error():
+    module = load_plugin_module()
+    plugin = module.Plugin(manifest())
+    plugin.config = {"leagues": "MLB", "timezone": "UTC", "mlb_teams": "SEA"}
+    result = plugin.fetch_data()
+    assert not result.available
+    assert result.error == "Leagues must be a list; Select at least one league; MLB teams must be a list"
+
+
+def test_out_of_range_saved_config_is_rejected():
+    module = load_plugin_module()
+    plugin = module.Plugin(manifest())
+    errors = plugin.validate_config(
+        {"leagues": ["MLB"], "timezone": "UTC", "lookahead_days": 30}
+    )
+    assert errors == ["Upcoming game window must be a whole number from 1 to 14"]
 
 
 def test_score_change_fires_notable_trigger_once():
@@ -178,10 +201,84 @@ def test_final_change_fires_trigger():
     assert trigger.data["line3"] == "FINAL"
 
 
+def test_game_start_alerts_are_enabled_when_setting_is_absent():
+    module = load_plugin_module()
+    plugin = module.Plugin(manifest())
+    plugin.config = {}
+    before = trigger_result(module, "scheduled", "", "")
+    after = trigger_result(module, "live", "0", "0")
+    with patch.object(plugin, "get_data", side_effect=[before, after]):
+        assert plugin.check_triggers() == []
+        trigger = plugin.check_triggers()[0]
+    assert trigger.trigger_id == "started_mlb-1"
+    assert trigger.data["event"] == "started"
+
+
+def test_overlapping_leagues_keep_independent_trigger_snapshots():
+    module = load_plugin_module()
+    plugin = module.Plugin(manifest())
+    plugin.config = {"trigger_on_score": True}
+    mlb_before = trigger_game("MLB", "1", "live", "1", "0")
+    nfl_before = trigger_game("NFL", "1", "live", "7", "0")
+    mlb_after = trigger_game("MLB", "1", "live", "2", "0")
+    nfl_after = trigger_game("NFL", "1", "live", "7", "0")
+    before = sports_result(module, [mlb_before, nfl_before])
+    after = sports_result(module, [mlb_after, nfl_after])
+
+    with patch.object(plugin, "get_data", side_effect=[before, after]):
+        assert plugin.check_triggers() == []
+        triggers = plugin.check_triggers()
+
+    assert [trigger.trigger_id for trigger in triggers] == ["score_mlb-1_2_0"]
+
+
+def test_score_line_preserves_both_large_scores():
+    module = load_plugin_module()
+    line = module._score_line(
+        {
+            "away_team": "LAFC",
+            "away_score": "123",
+            "home_team": "VAN",
+            "home_score": "123",
+        },
+        15,
+    )
+    assert line == "LAFC123 VAN123"
+    assert len(line) == 14
+
+
+def test_one_provider_can_fail_without_hiding_another_league():
+    module = load_plugin_module()
+    plugin = module.Plugin(manifest())
+    plugin.config = {"leagues": ["MLB", "NFL"], "timezone": "UTC"}
+    game = trigger_game("MLB", "1", "live", "2", "0")
+    with patch.object(
+        plugin,
+        "_fetch_league",
+        side_effect=[[game], RuntimeError("scoreboard unavailable")],
+    ):
+        result = plugin.fetch_data()
+    assert result.available
+    assert result.data["league"] == "MLB"
+
+
+def test_invalid_provider_json_is_reported():
+    module = load_plugin_module()
+    invalid = response({})
+    invalid.json.side_effect = ValueError("bad json")
+    with patch.object(module.requests, "get", return_value=invalid):
+        with pytest.raises(module.SportsDataError, match="NFL returned invalid JSON"):
+            module._request_json("https://example.test", {}, "NFL")
+
+
 def trigger_result(module, state, away_score, home_score):
-    game = {
-        "league": "MLB",
-        "event_id": "mlb-1",
+    return sports_result(module, [trigger_game("MLB", "mlb-1", state, away_score, home_score)])
+
+
+def trigger_game(league, event_id, state, away_score, home_score):
+    return {
+        "league": league,
+        "event_id": event_id,
         "away_team": "SEA",
         "home_team": "SF",
         "away_score": away_score,
@@ -191,13 +288,17 @@ def trigger_result(module, state, away_score, home_score):
         "starts_at": "2026-07-13T20:00:00+00:00",
         "minutes_until_start": -1,
     }
+
+
+def sports_result(module, games):
+    game = games[0]
     return module.PluginResult(
         available=True,
         data={
             **game,
-            "game_count": 1,
-            "has_live_game": state == "live",
-            "games": [game],
+            "game_count": len(games),
+            "has_live_game": any(item["state"] == "live" for item in games),
+            "games": games,
         },
     )
 
@@ -224,6 +325,10 @@ def nfl_game(away, home, starts_at):
                 {"homeAway": "away", "score": "0", "team": {"abbreviation": away}},
                 {"homeAway": "home", "score": "0", "team": {"abbreviation": home}},
             ],
-            "status": {"period": 0, "displayClock": "0:00", "type": {"state": "pre", "completed": False, "shortDetail": "Scheduled"}},
+            "status": {
+                "period": 0,
+                "displayClock": "0:00",
+                "type": {"state": "pre", "completed": False, "shortDetail": "Scheduled"},
+            },
         }],
     }

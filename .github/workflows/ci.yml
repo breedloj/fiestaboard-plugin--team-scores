@@ -39,7 +39,7 @@ jobs:
           PYTHONPATH: "${{ github.workspace }}:${{ github.workspace }}/fiestaboard-core"
         run: |
           pytest tests/ -q \
-            --cov=. --cov-branch \
+            --cov=. --cov-config=.coveragerc --cov-branch \
             --cov-report=term-missing \
             --cov-fail-under=80
 
