@@ -32,7 +32,7 @@ class SportsDataError(RuntimeError):
     """A league provider could not return usable scoreboard data."""
 
 
-class FavoriteSportsPlugin(PluginBase):
+class TeamScoresPlugin(PluginBase):
     """Show the most relevant game involving a configured favorite team."""
 
     def __init__(self, manifest: dict[str, Any]):
@@ -42,7 +42,7 @@ class FavoriteSportsPlugin(PluginBase):
 
     @property
     def plugin_id(self) -> str:
-        return "favorite_sports"
+        return "team_scores"
 
     def validate_config(self, config: dict[str, Any]) -> list[str]:
         errors: list[str] = []
@@ -625,4 +625,4 @@ def _fit(value: Any, width: int) -> str:
     return str(value or "").strip()[:width]
 
 
-Plugin = FavoriteSportsPlugin
+Plugin = TeamScoresPlugin

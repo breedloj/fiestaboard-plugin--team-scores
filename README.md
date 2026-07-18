@@ -1,8 +1,8 @@
-# Favorite Sports for FiestaBoard
+# Team Scores for FiestaBoard
 
 An installable FiestaBoard plugin for MLB and NFL scores centered on favorite teams instead of arbitrary league-wide games.
 
-![Favorite Sports on a Vestaboard Note](./docs/board-display.png)
+![Team Scores on a Vestaboard Note](./docs/board-display.png)
 
 ## Highlights
 
@@ -33,31 +33,31 @@ No API key is required.
 
 | Variable | Description | Example |
 |---|---|---|
-| `{{favorite_sports.league}}` | League for the most relevant game | `MLB` |
-| `{{favorite_sports.state}}` | `scheduled`, `live`, `final`, or `none` | `live` |
-| `{{favorite_sports.away_team}}` | Away-team abbreviation | `SEA` |
-| `{{favorite_sports.home_team}}` | Home-team abbreviation | `SF` |
-| `{{favorite_sports.away_score}}` | Away score when available | `4` |
-| `{{favorite_sports.home_score}}` | Home score when available | `2` |
-| `{{favorite_sports.status}}` | Start time, live detail, or final status | `BOT 7 1 OUT` |
-| `{{favorite_sports.minutes_until_start}}` | Minutes until a scheduled game, otherwise `-1` | `30` |
-| `{{favorite_sports.games}}` | Relevant games ordered by live, recent final, then upcoming | array |
+| `{{team_scores.league}}` | League for the most relevant game | `MLB` |
+| `{{team_scores.state}}` | `scheduled`, `live`, `final`, or `none` | `live` |
+| `{{team_scores.away_team}}` | Away-team abbreviation | `SEA` |
+| `{{team_scores.home_team}}` | Home-team abbreviation | `SF` |
+| `{{team_scores.away_score}}` | Away score when available | `4` |
+| `{{team_scores.home_score}}` | Home score when available | `2` |
+| `{{team_scores.status}}` | Start time, live detail, or final status | `BOT 7 1 OUT` |
+| `{{team_scores.minutes_until_start}}` | Minutes until a scheduled game, otherwise `-1` | `30` |
+| `{{team_scores.games}}` | Relevant games ordered by live, recent final, then upcoming | array |
 
 ### Ready-to-Display
 
 | Variable | Description | Maximum |
 |---|---|---|
-| `{{favorite_sports.line1}}` | Note-ready league and state | 15 tiles |
-| `{{favorite_sports.line2}}` | Note-ready matchup or score | 15 tiles |
-| `{{favorite_sports.line3}}` | Note-ready time or game detail | 15 tiles |
-| `{{favorite_sports.formatted}}` | Compact primary game for Flagship templates | 22 tiles |
+| `{{team_scores.line1}}` | Note-ready league and state | 15 tiles |
+| `{{team_scores.line2}}` | Note-ready matchup or score | 15 tiles |
+| `{{team_scores.line3}}` | Note-ready time or game detail | 15 tiles |
+| `{{team_scores.formatted}}` | Compact primary game for Flagship templates | 22 tiles |
 
 ## Note Template
 
 ```text
-{{favorite_sports.line1}}
-{{favorite_sports.line2}}
-{{favorite_sports.line3}}
+{{team_scores.line1}}
+{{team_scores.line2}}
+{{team_scores.line3}}
 ```
 
 Example live game:
@@ -80,7 +80,7 @@ SUN 1:25 PM
 
 Configure MLB and NFL favorites independently in the FiestaBoard UI. If a league's favorite list is empty, all games from that league are eligible. The primary fields always describe the highest-ranked relevant game.
 
-Use `favorite_sports.state` and `favorite_sports.minutes_until_start` for collection rules. Start, score, and final changes are better handled by FiestaBoard triggers: enable the alert types, choose **Favorite Sports for Note** as the trigger page, and the normal page or collection resumes when the alert expires. Each league's event identifiers are tracked independently during the MLB/NFL overlap.
+Use `team_scores.state` and `team_scores.minutes_until_start` for collection rules. Start, score, and final changes are better handled by FiestaBoard triggers: enable the alert types, choose **Team Scores for Note** as the trigger page, and the normal page or collection resumes when the alert expires. Each league's event identifiers are tracked independently during the MLB/NFL overlap.
 
 ## Configuration
 

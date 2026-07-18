@@ -1,6 +1,6 @@
 {
-  "id": "favorite_sports",
-  "name": "Favorite Sports",
+  "id": "team_scores",
+  "name": "Team Scores",
   "version": "1.2.0",
   "description": "MLB and NFL schedules, live scores, and alerts for your favorite teams.",
   "author": "Jonathan Breedlove",
@@ -160,21 +160,21 @@
   "screenshots": [
     {
       "src": "docs/board-display.png",
-      "alt": "Favorite Sports displaying an upcoming MLB game on a Vestaboard Note",
+      "alt": "Team Scores displaying an upcoming MLB game on a Vestaboard Note",
       "caption": "Note-ready favorite-team schedule with matchup and local start time",
       "primary": true
     }
   ],
   "demo": {
     "flagship": {
-      "name": "Favorite Sports",
+      "name": "Team Scores",
       "template": [
         "FAVORITE SPORTS",
-        "{{favorite_sports.formatted}}",
+        "{{team_scores.formatted}}",
         "",
         "",
         "",
-        "{{favorite_sports.game_count}} MATCHED GAMES"
+        "{{team_scores.game_count}} MATCHED GAMES"
       ],
       "line_metadata": [
         {"alignment": "center", "wrap": false},
@@ -186,11 +186,11 @@
       ]
     },
     "note": {
-      "name": "Favorite Sports for Note",
+      "name": "Team Scores for Note",
       "template": [
-        "{{favorite_sports.line1}}",
-        "{{favorite_sports.line2}}",
-        "{{favorite_sports.line3}}"
+        "{{team_scores.line1}}",
+        "{{team_scores.line2}}",
+        "{{team_scores.line3}}"
       ],
       "line_metadata": [
         {"alignment": "center", "wrap": false},

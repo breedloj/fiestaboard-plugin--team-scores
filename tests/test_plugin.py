@@ -15,7 +15,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def load_plugin_module():
     spec = importlib.util.spec_from_file_location(
-        "favorite_sports_external",
+        "team_scores_external",
         ROOT / "__init__.py",
         submodule_search_locations=[str(ROOT)],
     )
@@ -39,7 +39,7 @@ def response(payload):
 def test_manifest_and_plugin_id():
     module = load_plugin_module()
     plugin = module.Plugin(manifest())
-    assert plugin.plugin_id == "favorite_sports"
+    assert plugin.plugin_id == "team_scores"
     assert manifest()["version"] == "1.2.0"
     assert manifest()["settings_schema"]["properties"]["trigger_on_started"]["default"] is True
 
@@ -47,10 +47,10 @@ def test_manifest_and_plugin_id():
 def test_fiestaboard_loader_accepts_standalone_repo(tmp_path):
     from src.plugins.loader import PluginLoader
 
-    (tmp_path / "favorite_sports").symlink_to(ROOT, target_is_directory=True)
+    (tmp_path / "team_scores").symlink_to(ROOT, target_is_directory=True)
     loader = PluginLoader(plugins_dir=tmp_path, external_dirs=[])
-    plugin = loader.load_plugin("favorite_sports")
-    assert plugin is not None, loader._load_errors.get("favorite_sports")
+    plugin = loader.load_plugin("team_scores")
+    assert plugin is not None, loader._load_errors.get("team_scores")
 
 
 def test_filters_and_ranks_mlb_favorite_first():
