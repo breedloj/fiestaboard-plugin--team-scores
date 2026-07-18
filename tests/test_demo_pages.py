@@ -45,7 +45,7 @@ def test_demo_renders_at_exact_board_dimensions(device_type, demo):
     from src.templates.engine import TemplateEngine
 
     context = {
-        "favorite_sports": {
+        "team_scores": {
             "formatted": "SEA 4 SF 2 FINAL",
             "game_count": 2,
             "line1": "MLB FINAL",

@@ -1,23 +1,23 @@
-# Favorite Sports Setup
+# Team Scores Setup
 
-![Favorite Sports on a Vestaboard Note](./board-display.png)
+![Team Scores on a Vestaboard Note](./board-display.png)
 
 1. Install the plugin from its public GitHub HTTPS URL.
-2. Open **Integrations** and enable **Favorite Sports**.
+2. Open **Integrations** and enable **Team Scores**.
 3. Select MLB, NFL, or both.
 4. Choose favorite teams separately for each league.
 5. Set the timezone used to display upcoming game times.
 6. Keep the default refresh and relevance settings initially.
-7. Choose **Favorite Sports for Note** as the trigger page.
+7. Choose **Team Scores for Note** as the trigger page.
 
 ## Recommended Note Page
 
 Create a three-line page using:
 
 ```text
-{{favorite_sports.line1}}
-{{favorite_sports.line2}}
-{{favorite_sports.line3}}
+{{team_scores.line1}}
+{{team_scores.line2}}
+{{team_scores.line3}}
 ```
 
 Center all three rows. These fields are already limited to 15 tiles.
@@ -37,16 +37,16 @@ MLB and NFL team settings are separate, so identical abbreviations cannot be con
 To select the sports page during the 30 minutes before a game, add this rule to a variable-mode collection:
 
 ```text
-AND(favorite_sports.state == "scheduled", favorite_sports.minutes_until_start >= 0, favorite_sports.minutes_until_start <= 30)
+AND(team_scores.state == "scheduled", team_scores.minutes_until_start >= 0, team_scores.minutes_until_start <= 30)
 ```
 
 To keep the sports page selected throughout a live game, add:
 
 ```text
-favorite_sports.state == "live"
+team_scores.state == "live"
 ```
 
-Rules are for steady conditions. Use the plugin's **Show Score Alerts** and **Show Final Alerts** settings for momentary events. Those triggers briefly replace the current page, then FiestaBoard resumes the active schedule or collection automatically. Game-start alerts are optional and off by default.
+Rules are for steady conditions. Use the plugin's start, score, and final alert settings for momentary events. Those triggers briefly replace the current page, then FiestaBoard resumes the active schedule or collection automatically. All three alert types are enabled by default and can be disabled independently.
 
 ## Troubleshooting
 
@@ -55,13 +55,14 @@ Rules are for steady conditions. Use the plugin's **Show Score Alerts** and **Sh
 - Confirm the desired league is enabled.
 - Confirm the team is selected, or leave that league's team list empty to include every game.
 - Increase **Upcoming Game Window** if the next game is more than seven days away.
-- Recent final scores disappear after **Keep Final Scores** expires.
+- Recent final scores disappear after **Keep Final Scores** expires. The default is 12 hours.
 
 ### Alerts do not appear
 
 - Enable the corresponding score, final, or game-start alert setting.
 - Select a trigger page in FiestaBoard for this plugin.
 - The first successful fetch establishes a baseline and intentionally emits no alert.
+- A transition from scheduled to live is treated as a game-start event before any score comparison occurs.
 
 ### One league is temporarily unavailable
 

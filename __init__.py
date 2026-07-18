@@ -17,11 +17,22 @@ from src.triggers import TriggerPriority
 logger = logging.getLogger(__name__)
 
 MLB_SCHEDULE_URL = "https://statsapi.mlb.com/api/v1/schedule"
-NFL_SCOREBOARD_URL = "https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard"
 REQUEST_TIMEOUT = 20
+SUPPORTED_LEAGUES = ("MLB", "NFL")
+ESPN_LEAGUES = {
+    "NFL": {
+        "url": "https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard",
+        "teams_config": "nfl_teams",
+        "period_prefix": "Q",
+    },
+}
 
 
-class FavoriteSportsPlugin(PluginBase):
+class SportsDataError(RuntimeError):
+    """A league provider could not return usable scoreboard data."""
+
+
+class TeamScoresPlugin(PluginBase):
     """Show the most relevant game involving a configured favorite team."""
 
     def __init__(self, manifest: dict[str, Any]):
@@ -31,16 +42,33 @@ class FavoriteSportsPlugin(PluginBase):
 
     @property
     def plugin_id(self) -> str:
-        return "favorite_sports"
+        return "team_scores"
 
     def validate_config(self, config: dict[str, Any]) -> list[str]:
         errors: list[str] = []
-        leagues = config.get("leagues", ["MLB", "NFL"])
+        raw_leagues = config.get("leagues", list(SUPPORTED_LEAGUES))
+        if not isinstance(raw_leagues, list):
+            errors.append("Leagues must be a list")
+            leagues: list[str] = []
+        else:
+            leagues = [str(league).strip().upper() for league in raw_leagues]
         if not leagues:
             errors.append("Select at least one league")
-        invalid = sorted(set(leagues) - {"MLB", "NFL"})
+        invalid = sorted(set(leagues) - set(SUPPORTED_LEAGUES))
         if invalid:
             errors.append(f"Unsupported leagues: {', '.join(invalid)}")
+        for key, label in (("mlb_teams", "MLB teams"), ("nfl_teams", "NFL teams")):
+            if not isinstance(config.get(key, []), list):
+                errors.append(f"{label} must be a list")
+        for key, label, minimum, maximum in (
+            ("lookahead_days", "Upcoming game window", 1, 14),
+            ("final_max_age_hours", "Final score retention", 1, 48),
+            ("trigger_duration_seconds", "Alert duration", 15, 300),
+            ("refresh_seconds", "Refresh interval", 60, 3600),
+        ):
+            error = _integer_setting_error(config, key, label, minimum, maximum)
+            if error:
+                errors.append(error)
         try:
             ZoneInfo(str(config.get("timezone", "UTC")))
         except ZoneInfoNotFoundError:
@@ -48,27 +76,28 @@ class FavoriteSportsPlugin(PluginBase):
         return errors
 
     def fetch_data(self) -> PluginResult:
+        validation_errors = self.validate_config(self.config)
+        if validation_errors:
+            return PluginResult(available=False, error="; ".join(validation_errors))
+
         tz = self._timezone()
         now = self._now(tz)
-        leagues = self.config.get("leagues", ["MLB", "NFL"])
+        leagues = [
+            str(league).strip().upper()
+            for league in self.config.get("leagues", list(SUPPORTED_LEAGUES))
+        ]
         lookahead_days = max(1, min(14, int(self.config.get("lookahead_days", 7))))
-        final_max_age = timedelta(hours=max(1, float(self.config.get("final_max_age_hours", 18))))
+        final_max_age = timedelta(hours=max(1, float(self.config.get("final_max_age_hours", 12))))
         games: list[dict[str, Any]] = []
         errors: list[str] = []
 
-        if "MLB" in leagues:
+        for league in leagues:
             try:
-                games.extend(self._fetch_mlb(now, lookahead_days))
-            except Exception as exc:  # Keep one provider failure from hiding the other league.
-                logger.warning("MLB fetch failed: %s", exc)
-                errors.append(f"MLB: {exc}")
-
-        if "NFL" in leagues:
-            try:
-                games.extend(self._fetch_nfl(now, lookahead_days))
+                games.extend(self._fetch_league(league, now, lookahead_days))
             except Exception as exc:
-                logger.warning("NFL fetch failed: %s", exc)
-                errors.append(f"NFL: {exc}")
+                # Keep one provider failure from hiding another selected league.
+                logger.exception("%s fetch failed", league)
+                errors.append(f"{league}: {exc}")
 
         games = [game for game in games if self._is_relevant(game, now, lookahead_days, final_max_age)]
         for game in games:
@@ -92,7 +121,7 @@ class FavoriteSportsPlugin(PluginBase):
 
         games = result.data.get("games", [])
         current = {
-            str(game.get("event_id", "")): _trigger_state(game)
+            _event_key(game): _trigger_state(game)
             for game in games
             if game.get("event_id")
         }
@@ -106,12 +135,11 @@ class FavoriteSportsPlugin(PluginBase):
         duration = max(15, min(300, int(self.config.get("trigger_duration_seconds", 45))))
         triggers: list[TriggerResult] = []
         for game in games:
-            event_id = str(game.get("event_id", ""))
-            before = previous.get(event_id)
+            before = previous.get(_event_key(game))
             if before is None:
                 continue
             event = self._detect_event(before, game)
-            if event == "none" or not self.config.get(f"trigger_on_{event}", event != "started"):
+            if event == "none" or not self.config.get(f"trigger_on_{event}", True):
                 continue
             data = self._result_data(game, games, event=event)
             triggers.append(
@@ -135,11 +163,11 @@ class FavoriteSportsPlugin(PluginBase):
         state = str(game.get("state", ""))
         if state == "final" and before["state"] != "final":
             return "final"
+        if state == "live" and before["state"] == "scheduled":
+            return "started"
         scores = (str(game.get("away_score", "")), str(game.get("home_score", "")))
         if state == "live" and scores != (before["away_score"], before["home_score"]):
             return "score"
-        if state == "live" and before["state"] == "scheduled":
-            return "started"
         return "none"
 
     def _result_data(
@@ -165,30 +193,59 @@ class FavoriteSportsPlugin(PluginBase):
             "endDate": (now.date() + timedelta(days=lookahead_days)).isoformat(),
             "hydrate": "team,linescore",
         }
-        response = requests.get(MLB_SCHEDULE_URL, params=params, timeout=REQUEST_TIMEOUT)
-        response.raise_for_status()
-        favorites = {str(team).upper() for team in self.config.get("mlb_teams", [])}
+        payload = _request_json(MLB_SCHEDULE_URL, params, "MLB")
+        favorites = {str(team).strip().upper() for team in self.config.get("mlb_teams", [])}
         games: list[dict[str, Any]] = []
-        for date_group in response.json().get("dates", []):
+        date_groups = payload.get("dates", [])
+        if not isinstance(date_groups, list):
+            raise SportsDataError("MLB returned an unexpected schedule")
+        for date_group in date_groups:
+            if not isinstance(date_group, dict):
+                continue
             for raw in date_group.get("games", []):
+                if not isinstance(raw, dict):
+                    continue
                 game = self._parse_mlb_game(raw, now.tzinfo)
                 if not favorites or {game["away_team"], game["home_team"]} & favorites:
                     games.append(game)
         return games
 
-    def _fetch_nfl(self, now: datetime, lookahead_days: int) -> list[dict[str, Any]]:
+    def _fetch_league(
+        self,
+        league: str,
+        now: datetime,
+        lookahead_days: int,
+    ) -> list[dict[str, Any]]:
+        if league == "MLB":
+            return self._fetch_mlb(now, lookahead_days)
+        return self._fetch_espn(league, now, lookahead_days)
+
+    def _fetch_espn(
+        self,
+        league: str,
+        now: datetime,
+        lookahead_days: int,
+    ) -> list[dict[str, Any]]:
+        spec = ESPN_LEAGUES[league]
         params = {
             "dates": (
                 f"{(now.date() - timedelta(days=1)).strftime('%Y%m%d')}-"
                 f"{(now.date() + timedelta(days=lookahead_days)).strftime('%Y%m%d')}"
             )
         }
-        response = requests.get(NFL_SCOREBOARD_URL, params=params, timeout=REQUEST_TIMEOUT)
-        response.raise_for_status()
-        favorites = {str(team).upper() for team in self.config.get("nfl_teams", [])}
+        payload = _request_json(str(spec["url"]), params, league)
+        favorites = {
+            str(team).strip().upper()
+            for team in self.config.get(str(spec["teams_config"]), [])
+        }
         games: list[dict[str, Any]] = []
-        for event in response.json().get("events", []):
-            game = self._parse_nfl_game(event, now.tzinfo)
+        events = payload.get("events", [])
+        if not isinstance(events, list):
+            raise SportsDataError(f"{league} returned an unexpected scoreboard")
+        for event in events:
+            if not isinstance(event, dict):
+                continue
+            game = self._parse_espn_game(event, now.tzinfo, league)
             if game and (not favorites or {game["away_team"], game["home_team"]} & favorites):
                 games.append(game)
         return games
@@ -223,7 +280,12 @@ class FavoriteSportsPlugin(PluginBase):
             starts_at=starts_at,
         )
 
-    def _parse_nfl_game(self, event: dict[str, Any], tz: Any) -> dict[str, Any] | None:
+    def _parse_espn_game(
+        self,
+        event: dict[str, Any],
+        tz: Any,
+        league: str,
+    ) -> dict[str, Any] | None:
         competition = (event.get("competitions") or [{}])[0]
         competitors = competition.get("competitors", [])
         if len(competitors) < 2:
@@ -232,17 +294,23 @@ class FavoriteSportsPlugin(PluginBase):
         home = _competitor(competitors, "home")
         status = competition.get("status", {})
         status_type = status.get("type", {})
-        state = "final" if status_type.get("completed") else "live" if status_type.get("state") == "in" else "scheduled"
+        state = (
+            "final"
+            if status_type.get("completed")
+            else "live"
+            if status_type.get("state") == "in"
+            else "scheduled"
+        )
         starts_at = _parse_datetime(event.get("date"), tz)
         detail = (
-            _nfl_detail(status)
+            _espn_detail(status, str(ESPN_LEAGUES[league]["period_prefix"]))
             if state == "live"
             else "FINAL"
             if state == "final"
             else _scheduled_status(str(status_type.get("description", "")), starts_at)
         )
         return _game(
-            league="NFL",
+            league=league,
             event_id=str(event.get("id", "")),
             away_team=away["team"],
             home_team=home["team"],
@@ -294,7 +362,7 @@ class FavoriteSportsPlugin(PluginBase):
             line2 = f"{game['away_team']} AT {game['home_team']}"
             line3 = game["status"]
         else:
-            line2 = f"{game['away_team']} {game['away_score']}  {game['home_team']} {game['home_score']}"
+            line2 = _score_line(game, 15)
             line3 = game["status"]
         return {
             "header": f"{game['league']} {game['state'].upper()}",
@@ -320,7 +388,19 @@ class FavoriteSportsPlugin(PluginBase):
     def _empty_data() -> dict[str, Any]:
         return {
             "league": "",
+            "event_id": "",
+            "away_team": "",
+            "home_team": "",
+            "away_score": "",
+            "home_score": "",
+            "away_margin": 0,
+            "home_margin": 0,
+            "away_color": "",
+            "home_color": "",
             "state": "none",
+            "status": "NO MATCHED GAME",
+            "detailed_status": "",
+            "starts_at": "",
             "game_count": 0,
             "has_live_game": False,
             "minutes_until_start": -1,
@@ -384,10 +464,17 @@ def _trigger_state(game: dict[str, Any]) -> dict[str, str]:
 
 
 def _trigger_id(event: str, game: dict[str, Any]) -> str:
-    event_id = str(game.get("event_id", "game"))
+    event_id = _event_key(game)
     if event == "score":
         return f"score_{event_id}_{game.get('away_score', '')}_{game.get('home_score', '')}"
     return f"{event}_{event_id}"
+
+
+def _event_key(game: dict[str, Any]) -> str:
+    league = str(game.get("league") or "game").strip().lower()
+    event_id = str(game.get("event_id") or "game").strip()
+    prefix = f"{league}-"
+    return event_id if event_id.lower().startswith(prefix) else f"{prefix}{event_id}"
 
 
 def _mlb_abbreviation(team: dict[str, Any], fallback: str) -> str:
@@ -422,10 +509,10 @@ def _mlb_detail(raw: dict[str, Any]) -> str:
     return " ".join(parts) or "LIVE"
 
 
-def _nfl_detail(status: dict[str, Any]) -> str:
+def _espn_detail(status: dict[str, Any], period_prefix: str) -> str:
     period = status.get("period")
     clock = str(status.get("displayClock", "")).strip()
-    parts = [f"Q{period}" if period else "LIVE"]
+    parts = [f"{period_prefix}{period}" if period else "LIVE"]
     if clock and clock != "0:00":
         parts.append(clock)
     return " ".join(parts)
@@ -484,8 +571,58 @@ def _team_color(margin: float, state: str) -> str:
     return "{65}"
 
 
+def _score_line(game: dict[str, Any], width: int) -> str:
+    away = str(game.get("away_team") or "AWAY")
+    home = str(game.get("home_team") or "HOME")
+    away_score = str(game.get("away_score") or "0")
+    home_score = str(game.get("home_score") or "0")
+    candidates = (
+        f"{away} {away_score}  {home} {home_score}",
+        f"{away} {away_score} {home} {home_score}",
+        f"{away}{away_score} {home}{home_score}",
+    )
+    return next((line for line in candidates if len(line) <= width), _fit(candidates[-1], width))
+
+
+def _request_json(url: str, params: dict[str, Any], provider: str) -> dict[str, Any]:
+    try:
+        response = requests.get(url, params=params, timeout=REQUEST_TIMEOUT)
+        response.raise_for_status()
+        payload = response.json()
+    except requests.RequestException as exc:
+        status = getattr(getattr(exc, "response", None), "status_code", None)
+        detail = f" (HTTP {status})" if status else ""
+        raise SportsDataError(f"{provider} request failed{detail}") from exc
+    except ValueError as exc:
+        raise SportsDataError(f"{provider} returned invalid JSON") from exc
+    if not isinstance(payload, dict):
+        raise SportsDataError(f"{provider} returned an unexpected response")
+    return payload
+
+
+def _integer_setting_error(
+    config: dict[str, Any],
+    key: str,
+    label: str,
+    minimum: int,
+    maximum: int,
+) -> str | None:
+    if key not in config:
+        return None
+    value = config[key]
+    if isinstance(value, bool):
+        return f"{label} must be a whole number from {minimum} to {maximum}"
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return f"{label} must be a whole number from {minimum} to {maximum}"
+    if not parsed.is_integer() or not minimum <= parsed <= maximum:
+        return f"{label} must be a whole number from {minimum} to {maximum}"
+    return None
+
+
 def _fit(value: Any, width: int) -> str:
     return str(value or "").strip()[:width]
 
 
-Plugin = FavoriteSportsPlugin
+Plugin = TeamScoresPlugin
