@@ -40,7 +40,7 @@ def test_manifest_and_plugin_id():
     module = load_plugin_module()
     plugin = module.Plugin(manifest())
     assert plugin.plugin_id == "team_scores"
-    assert manifest()["version"] == "1.2.0"
+    assert manifest()["version"] == "1.3.0"
     assert manifest()["settings_schema"]["properties"]["trigger_on_started"]["default"] is True
     assert manifest()["settings_schema"]["properties"]["live_refresh_seconds"]["default"] == 30
 
@@ -72,7 +72,7 @@ def test_filters_and_ranks_mlb_favorite_first():
             ]
         }]
     }
-    with patch.object(module.requests, "get", return_value=response(payload)), patch.object(
+    with patch.object(module.requests, "get", return_value=response(payload)) as request, patch.object(
         plugin, "_now", return_value=datetime(2026, 7, 13, 21, tzinfo=timezone.utc)
     ):
         result = plugin.fetch_data()
@@ -82,6 +82,12 @@ def test_filters_and_ranks_mlb_favorite_first():
     assert result.data["away_team"] == "SEA"
     assert result.data["state"] == "live"
     assert len(result.data["line2"]) <= 15
+    assert set(manifest()["variables"]["arrays"]["games"]["item_fields"]) <= set(
+        result.data["games"][0]
+    )
+    assert request.call_args.kwargs["params"]["hydrate"] == (
+        "team,linescore,probablePitcher,venue,broadcasts"
+    )
 
 
 def test_nfl_favorite_and_note_lines():
@@ -105,6 +111,12 @@ def test_nfl_favorite_and_note_lines():
     assert result.data["league"] == "NFL"
     assert result.data["minutes_until_start"] == 1920
     assert result.data["line2"] == "SEA AT SF"
+    assert result.data["away_record"] == "14-3"
+    assert result.data["home_record"] == "12-5"
+    assert result.data["broadcast"] == "NBC"
+    assert result.data["venue"] == "Lumen Field"
+    assert result.data["series_context"] == "Sunday Night Football"
+    assert result.data["context_line"] == "NBC"
     assert all(len(line) <= 15 for line in result.formatted_lines[:3])
     assert request.call_args.args[0] == module.ESPN_LEAGUES["NFL"]["url"]
 
@@ -149,6 +161,73 @@ def test_mlb_warmup_remains_scheduled_until_play_begins():
     assert warmup["state"] == "scheduled"
     assert warmup["away_score"] == ""
     assert active["state"] == "live"
+
+
+def test_mlb_optional_context_fields_are_parsed_defensively():
+    module = load_plugin_module()
+    plugin = module.Plugin(manifest())
+    raw = mlb_game(1, "SF", "SEA", "Live", "2026-07-18T20:00:00Z", 2, 4)
+    raw["teams"]["away"].update({
+        "leagueRecord": {"wins": 52, "losses": 46},
+        "probablePitcher": {"fullName": "Logan Webb"},
+    })
+    raw["teams"]["home"].update({
+        "leagueRecord": {"wins": 54, "losses": 44},
+        "probablePitcher": {"fullName": "Bryan Woo"},
+    })
+    raw.update({
+        "venue": {"name": "T-Mobile Park"},
+        "broadcasts": [
+            {"type": "TV", "language": "en", "callSign": "ROOT", "isNational": False},
+            {"type": "TV", "language": "en", "callSign": "FOX", "isNational": True},
+        ],
+        "seriesGameNumber": 2,
+        "gamesInSeries": 3,
+    })
+    raw["linescore"]["offense"] = {"first": {"id": 1}, "third": {"id": 2}}
+
+    game = plugin._parse_mlb_game(raw, timezone.utc)
+
+    assert game["away_record"] == "52-46"
+    assert game["home_record"] == "54-44"
+    assert game["probable_pitcher_away"] == "Logan Webb"
+    assert game["probable_pitcher_home"] == "Bryan Woo"
+    assert game["pitching_matchup"] == "Webb / Woo"
+    assert game["broadcast"] == "FOX"
+    assert game["venue"] == "T-Mobile Park"
+    assert game["situation"] == "RUNNERS 1ST 3RD"
+    assert game["series_context"] == "GAME 2 OF 3"
+    assert plugin._display_fields(game)["context_line"] == "RUNNERS 1ST 3RD"
+
+
+def test_optional_context_is_empty_when_provider_omits_it():
+    module = load_plugin_module()
+    plugin = module.Plugin(manifest())
+    game = plugin._parse_mlb_game(
+        mlb_game(1, "SEA", "SF", "Preview", "2026-07-18T20:00:00Z", 0, 0),
+        timezone.utc,
+    )
+
+    for key in (
+        "away_record",
+        "home_record",
+        "venue",
+        "broadcast",
+        "probable_pitcher_away",
+        "probable_pitcher_home",
+        "pitching_matchup",
+        "situation",
+        "series_context",
+    ):
+        assert game[key] == ""
+    assert plugin._display_fields(game)["context_line"] == ""
+
+
+def test_live_context_compacts_nfl_and_loaded_bases_for_note():
+    module = load_plugin_module()
+
+    assert module._compact_situation("RED ZONE 3RD & 4 AT SEA 12", 15) == "RZ 3RD & 4"
+    assert module._compact_situation("RUNNERS 1ST 2ND 3RD", 15) == "ON 1ST 2ND 3RD"
 
 
 def test_no_match_is_available_but_explicit():
@@ -357,9 +436,22 @@ def nfl_game(away, home, starts_at):
         "date": starts_at,
         "competitions": [{
             "competitors": [
-                {"homeAway": "away", "score": "0", "team": {"abbreviation": away}},
-                {"homeAway": "home", "score": "0", "team": {"abbreviation": home}},
+                {
+                    "homeAway": "away",
+                    "score": "0",
+                    "team": {"abbreviation": away},
+                    "records": [{"name": "overall", "summary": "14-3"}],
+                },
+                {
+                    "homeAway": "home",
+                    "score": "0",
+                    "team": {"abbreviation": home},
+                    "records": [{"name": "overall", "summary": "12-5"}],
+                },
             ],
+            "venue": {"fullName": "Lumen Field"},
+            "broadcasts": [{"market": "national", "names": ["NBC"]}],
+            "notes": [{"headline": "Sunday Night Football"}],
             "status": {
                 "period": 0,
                 "displayClock": "0:00",

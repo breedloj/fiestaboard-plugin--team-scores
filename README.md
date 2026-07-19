@@ -16,6 +16,7 @@ An installable FiestaBoard plugin for MLB and NFL scores centered on favorite te
 - Adaptive polling: 10 minutes when idle, 60 seconds before games, and 30 seconds live
 - Independent trigger tracking when multiple leagues overlap
 - Three ready-to-display fields designed for the 15x3 Vestaboard Note
+- Optional broadcast, records, venue, pitcher, series, and live-situation variables
 - No API key required
 
 ## Install
@@ -44,6 +45,22 @@ No API key is required.
 | `{{team_scores.minutes_until_start}}` | Minutes until a scheduled game, otherwise `-1` | `30` |
 | `{{team_scores.games}}` | Relevant games ordered by live, recent final, then upcoming | array |
 
+### Optional Context
+
+These values are empty when a provider does not supply them. They are also available on every item in `team_scores.games`.
+
+| Variable | Description | Example |
+|---|---|---|
+| `{{team_scores.away_record}}` | Away-team season record | `52-46` |
+| `{{team_scores.home_record}}` | Home-team season record | `54-44` |
+| `{{team_scores.broadcast}}` | Preferred TV broadcaster | `ROOT SPORTS` |
+| `{{team_scores.venue}}` | Venue name | `T-Mobile Park` |
+| `{{team_scores.probable_pitcher_away}}` | MLB away probable pitcher | `Logan Webb` |
+| `{{team_scores.probable_pitcher_home}}` | MLB home probable pitcher | `Bryan Woo` |
+| `{{team_scores.pitching_matchup}}` | Compact MLB pitching matchup | `Webb / Woo` |
+| `{{team_scores.situation}}` | MLB occupied bases or NFL down-and-distance | `RUNNERS 1ST 3RD` |
+| `{{team_scores.series_context}}` | MLB series game or NFL event label | `GAME 2 OF 3` |
+
 ### Ready-to-Display
 
 | Variable | Description | Maximum |
@@ -51,6 +68,7 @@ No API key is required.
 | `{{team_scores.line1}}` | Note-ready league and state | 15 tiles |
 | `{{team_scores.line2}}` | Note-ready matchup or score | 15 tiles |
 | `{{team_scores.line3}}` | Note-ready time or game detail | 15 tiles |
+| `{{team_scores.context_line}}` | Best available optional context | 15 tiles |
 | `{{team_scores.formatted}}` | Compact primary game for Flagship templates | 22 tiles |
 
 ## Note Template
@@ -76,6 +94,8 @@ NFL SCHEDULED
 SEA AT SF
 SUN 1:25 PM
 ```
+
+`context_line` is intentionally separate so the default page remains stable. It prefers a live game situation, then broadcast, pitching matchup, records, series context, or venue. It can be used on an alternate context page without changing the score page.
 
 ## Selection Behavior
 

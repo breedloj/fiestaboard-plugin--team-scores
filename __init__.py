@@ -232,7 +232,7 @@ class TeamScoresPlugin(PluginBase):
             "sportId": 1,
             "startDate": (now.date() - timedelta(days=1)).isoformat(),
             "endDate": (now.date() + timedelta(days=lookahead_days)).isoformat(),
-            "hydrate": "team,linescore",
+            "hydrate": "team,linescore,probablePitcher,venue,broadcasts",
         }
         payload = _request_json(MLB_SCHEDULE_URL, params, "MLB")
         favorites = {str(team).strip().upper() for team in self.config.get("mlb_teams", [])}
@@ -302,6 +302,8 @@ class TeamScoresPlugin(PluginBase):
         starts_at = _parse_datetime(raw.get("gameDate"), tz)
         away_team = _mlb_abbreviation(away.get("team", {}), "AWAY")
         home_team = _mlb_abbreviation(home.get("team", {}), "HOME")
+        probable_pitcher_away = _person_name(away.get("probablePitcher"))
+        probable_pitcher_home = _person_name(home.get("probablePitcher"))
         detail = (
             _mlb_detail(raw)
             if state == "live"
@@ -320,6 +322,15 @@ class TeamScoresPlugin(PluginBase):
             status=detail,
             detailed_status=detailed_status,
             starts_at=starts_at,
+            away_record=_record(away.get("leagueRecord")),
+            home_record=_record(home.get("leagueRecord")),
+            venue=_nested_text(raw, "venue", "name"),
+            broadcast=_mlb_broadcast(raw.get("broadcasts")),
+            probable_pitcher_away=probable_pitcher_away,
+            probable_pitcher_home=probable_pitcher_home,
+            pitching_matchup=_pitching_matchup(probable_pitcher_away, probable_pitcher_home),
+            situation=_mlb_situation(raw),
+            series_context=_mlb_series_context(raw),
         )
 
     def _parse_espn_game(
@@ -362,6 +373,12 @@ class TeamScoresPlugin(PluginBase):
             status=detail,
             detailed_status=str(status_type.get("shortDetail", "")),
             starts_at=starts_at,
+            away_record=away["record"],
+            home_record=home["record"],
+            venue=_nested_text(competition, "venue", "fullName"),
+            broadcast=_espn_broadcast(competition.get("broadcasts")),
+            situation=_espn_situation(competition.get("situation")),
+            series_context=_espn_event_context(competition.get("notes")),
         )
 
     def _is_relevant(
@@ -411,6 +428,7 @@ class TeamScoresPlugin(PluginBase):
             "line1": _fit(f"{game['league']} {game['state'].upper()}", 15),
             "line2": _fit(line2, 15),
             "line3": _fit(line3, 15),
+            "context_line": _context_line(game, 15),
             "formatted": _fit(f"{line2} {line3}", 22),
         }
 
@@ -443,6 +461,15 @@ class TeamScoresPlugin(PluginBase):
             "status": "NO MATCHED GAME",
             "detailed_status": "",
             "starts_at": "",
+            "away_record": "",
+            "home_record": "",
+            "venue": "",
+            "broadcast": "",
+            "probable_pitcher_away": "",
+            "probable_pitcher_home": "",
+            "pitching_matchup": "",
+            "situation": "",
+            "series_context": "",
             "game_count": 0,
             "has_live_game": False,
             "minutes_until_start": -1,
@@ -452,6 +479,7 @@ class TeamScoresPlugin(PluginBase):
             "line1": "FAVORITE SPORTS",
             "line2": "NO MATCHED GAME",
             "line3": "",
+            "context_line": "",
             "formatted": "NO MATCHED GAME",
         }
 
@@ -468,6 +496,15 @@ def _game(
     status: str,
     detailed_status: str,
     starts_at: datetime | None,
+    away_record: str = "",
+    home_record: str = "",
+    venue: str = "",
+    broadcast: str = "",
+    probable_pitcher_away: str = "",
+    probable_pitcher_home: str = "",
+    pitching_matchup: str = "",
+    situation: str = "",
+    series_context: str = "",
 ) -> dict[str, Any]:
     margin = _margin(away_score, home_score)
     return {
@@ -485,6 +522,15 @@ def _game(
         "status": status,
         "detailed_status": detailed_status,
         "starts_at": starts_at.isoformat() if starts_at else "",
+        "away_record": away_record,
+        "home_record": home_record,
+        "venue": venue,
+        "broadcast": broadcast,
+        "probable_pitcher_away": probable_pitcher_away,
+        "probable_pitcher_home": probable_pitcher_home,
+        "pitching_matchup": pitching_matchup,
+        "situation": situation,
+        "series_context": series_context,
     }
 
 
@@ -547,7 +593,153 @@ def _competitor(items: list[dict[str, Any]], side: str) -> dict[str, str]:
     return {
         "team": str(team.get("abbreviation") or team.get("shortDisplayName") or side).upper(),
         "score": str(item.get("score") or "0"),
+        "record": _espn_record(item.get("records")),
     }
+
+
+def _record(value: Any) -> str:
+    if not isinstance(value, dict):
+        return ""
+    wins = value.get("wins")
+    losses = value.get("losses")
+    if wins is None or losses is None:
+        return ""
+    ties = value.get("ties")
+    suffix = f"-{ties}" if ties not in {None, 0, "0"} else ""
+    return f"{wins}-{losses}{suffix}"
+
+
+def _espn_record(records: Any) -> str:
+    if not isinstance(records, list):
+        return ""
+    overall = next(
+        (record for record in records if str(record.get("name", "")).lower() == "overall"),
+        records[0] if records else {},
+    )
+    return str(overall.get("summary") or "") if isinstance(overall, dict) else ""
+
+
+def _person_name(value: Any) -> str:
+    return str(value.get("fullName") or "") if isinstance(value, dict) else ""
+
+
+def _pitching_matchup(away: str, home: str) -> str:
+    if not away or not home:
+        return away or home
+    return f"{away.rsplit(' ', 1)[-1]} / {home.rsplit(' ', 1)[-1]}"
+
+
+def _nested_text(value: Any, *keys: str) -> str:
+    current = value
+    for key in keys:
+        if not isinstance(current, dict):
+            return ""
+        current = current.get(key)
+    return str(current or "")
+
+
+def _mlb_broadcast(value: Any) -> str:
+    if not isinstance(value, list):
+        return ""
+    tv = [
+        item
+        for item in value
+        if isinstance(item, dict)
+        and item.get("type") == "TV"
+        and item.get("language", "en") == "en"
+    ]
+    if not tv:
+        return ""
+    preferred = next((item for item in tv if item.get("isNational")), tv[0])
+    return str(preferred.get("callSign") or preferred.get("name") or "")
+
+
+def _espn_broadcast(value: Any) -> str:
+    if not isinstance(value, list):
+        return ""
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        names = item.get("names")
+        if isinstance(names, list) and names:
+            return str(names[0])
+    return ""
+
+
+def _mlb_situation(raw: dict[str, Any]) -> str:
+    offense = raw.get("linescore", {}).get("offense", {})
+    if not isinstance(offense, dict):
+        return ""
+    occupied = [
+        label
+        for key, label in (("first", "1ST"), ("second", "2ND"), ("third", "3RD"))
+        if offense.get(key)
+    ]
+    if not occupied:
+        return ""
+    prefix = "RUNNER" if len(occupied) == 1 else "RUNNERS"
+    return f"{prefix} {' '.join(occupied)}"
+
+
+def _espn_situation(value: Any) -> str:
+    if not isinstance(value, dict):
+        return ""
+    detail = str(value.get("shortDownDistanceText") or value.get("downDistanceText") or "")
+    if value.get("isRedZone") and detail:
+        return f"RED ZONE {detail}".upper()
+    return detail.upper()
+
+
+def _mlb_series_context(raw: dict[str, Any]) -> str:
+    number = raw.get("seriesGameNumber")
+    total = raw.get("gamesInSeries")
+    if number and total:
+        return f"GAME {number} OF {total}"
+    return str(raw.get("seriesDescription") or "")
+
+
+def _espn_event_context(value: Any) -> str:
+    if not isinstance(value, list):
+        return ""
+    first = next((item for item in value if isinstance(item, dict) and item.get("headline")), None)
+    return str(first.get("headline") or "") if first else ""
+
+
+def _context_line(game: dict[str, Any], width: int) -> str:
+    if game.get("state") == "live" and game.get("situation"):
+        return _compact_situation(str(game["situation"]), width)
+    candidates = (
+        game.get("broadcast"),
+        game.get("pitching_matchup"),
+        _record_matchup(game),
+        game.get("series_context"),
+        game.get("venue"),
+    )
+    available = [str(value).strip() for value in candidates if value]
+    fallback = _fit(available[0], width) if available else ""
+    return next((value for value in available if len(value) <= width), fallback)
+
+
+def _compact_situation(value: str, width: int) -> str:
+    candidates = [value]
+    if value.startswith("RED ZONE "):
+        candidates.append(f"RZ {value.removeprefix('RED ZONE ')}")
+    if value.startswith("RUNNERS "):
+        candidates.append(f"ON {value.removeprefix('RUNNERS ')}")
+    candidates.extend(
+        candidate.split(" AT ", 1)[0]
+        for candidate in tuple(candidates)
+        if " AT " in candidate
+    )
+    return next((candidate for candidate in candidates if len(candidate) <= width), _fit(candidates[-1], width))
+
+
+def _record_matchup(game: dict[str, Any]) -> str:
+    away = str(game.get("away_record") or "")
+    home = str(game.get("home_record") or "")
+    if away and home:
+        return f"{away} / {home}"
+    return away or home
 
 
 def _mlb_detail(raw: dict[str, Any]) -> str:

@@ -24,6 +24,18 @@ Create a three-line page using:
 
 Center all three rows. These fields are already limited to 15 tiles.
 
+## Optional Context Page
+
+The default page does not change when richer provider data is available. To build a companion page, use any optional variables directly or use the ready-made context line:
+
+```text
+{{team_scores.line2}}
+{{team_scores.line3}}
+{{team_scores.context_line}}
+```
+
+`context_line` selects the best available live situation, broadcaster, pitching matchup, team records, series context, or venue and limits it to 15 tiles. Missing optional data resolves to an empty string.
+
 ## When Games Appear
 
 - Live matching games rank first.
