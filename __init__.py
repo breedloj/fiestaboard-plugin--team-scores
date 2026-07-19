@@ -18,6 +18,10 @@ logger = logging.getLogger(__name__)
 
 MLB_SCHEDULE_URL = "https://statsapi.mlb.com/api/v1/schedule"
 REQUEST_TIMEOUT = 20
+DEFAULT_IDLE_REFRESH_SECONDS = 600
+DEFAULT_LIVE_REFRESH_SECONDS = 30
+PREGAME_REFRESH_SECONDS = 60
+PREGAME_WINDOW = timedelta(minutes=30)
 SUPPORTED_LEAGUES = ("MLB", "NFL")
 ESPN_LEAGUES = {
     "NFL": {
@@ -64,7 +68,8 @@ class TeamScoresPlugin(PluginBase):
             ("lookahead_days", "Upcoming game window", 1, 14),
             ("final_max_age_hours", "Final score retention", 1, 48),
             ("trigger_duration_seconds", "Alert duration", 15, 300),
-            ("refresh_seconds", "Refresh interval", 60, 3600),
+            ("refresh_seconds", "Idle refresh interval", 120, 3600),
+            ("live_refresh_seconds", "Live refresh interval", 15, 60),
         ):
             error = _integer_setting_error(config, key, label, minimum, maximum)
             if error:
@@ -74,6 +79,42 @@ class TeamScoresPlugin(PluginBase):
         except ZoneInfoNotFoundError:
             errors.append("Timezone must be a valid IANA name, such as America/Los_Angeles")
         return errors
+
+    @property
+    def refresh_seconds(self) -> int:
+        """Select a cache interval from the most recently fetched game state."""
+        idle_interval = _bounded_int(
+            self.config.get("refresh_seconds"),
+            DEFAULT_IDLE_REFRESH_SECONDS,
+            120,
+            3600,
+        )
+        live_interval = _bounded_int(
+            self.config.get("live_refresh_seconds"),
+            DEFAULT_LIVE_REFRESH_SECONDS,
+            15,
+            60,
+        )
+        with self._cache_lock:
+            cached_results = list(self._cached_results.values())
+
+        games = [
+            game
+            for result in cached_results
+            if result.available and result.data
+            for game in result.data.get("games", [])
+        ]
+        if any(game.get("state") == "live" for game in games):
+            return live_interval
+
+        now = datetime.now(timezone.utc)
+        for game in games:
+            if game.get("state") != "scheduled":
+                continue
+            starts_at = _parse_datetime(game.get("starts_at"), timezone.utc)
+            if starts_at and starts_at - now <= PREGAME_WINDOW:
+                return PREGAME_REFRESH_SECONDS
+        return idle_interval
 
     def fetch_data(self) -> PluginResult:
         validation_errors = self.validate_config(self.config)
@@ -619,6 +660,14 @@ def _integer_setting_error(
     if not parsed.is_integer() or not minimum <= parsed <= maximum:
         return f"{label} must be a whole number from {minimum} to {maximum}"
     return None
+
+
+def _bounded_int(value: Any, default: int, minimum: int, maximum: int) -> int:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return default
+    return max(minimum, min(maximum, parsed))
 
 
 def _fit(value: Any, width: int) -> str:
