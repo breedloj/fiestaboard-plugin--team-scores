@@ -23,7 +23,7 @@ An installable FiestaBoard plugin for MLB and NFL scores centered on favorite te
 Install the repository's HTTPS URL from FiestaBoard's **Integrations** page:
 
 ```text
-https://github.com/breedloj/fiestaboard-plugin--favorite-sports
+https://github.com/breedloj/fiestaboard-plugin--team-scores
 ```
 
 No API key is required.

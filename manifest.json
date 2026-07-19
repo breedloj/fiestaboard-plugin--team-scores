@@ -4,7 +4,7 @@
   "version": "1.2.0",
   "description": "MLB and NFL schedules, live scores, and alerts for your favorite teams.",
   "author": "Jonathan Breedlove",
-  "repository": "https://github.com/breedloj/fiestaboard-plugin--favorite-sports",
+  "repository": "https://github.com/breedloj/fiestaboard-plugin--team-scores",
   "icon": "trophy",
   "category": "entertainment",
   "supports_triggers": true,
