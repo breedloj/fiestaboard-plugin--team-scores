@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
@@ -42,6 +42,7 @@ def test_manifest_and_plugin_id():
     assert plugin.plugin_id == "team_scores"
     assert manifest()["version"] == "1.2.0"
     assert manifest()["settings_schema"]["properties"]["trigger_on_started"]["default"] is True
+    assert manifest()["settings_schema"]["properties"]["live_refresh_seconds"]["default"] == 30
 
 
 def test_fiestaboard_loader_accepts_standalone_repo(tmp_path):
@@ -169,6 +170,25 @@ def test_out_of_range_saved_config_is_rejected():
         {"leagues": ["MLB"], "timezone": "UTC", "lookahead_days": 30}
     )
     assert errors == ["Upcoming game window must be a whole number from 1 to 14"]
+
+
+def test_adaptive_refresh_uses_idle_pregame_and_live_tiers():
+    module = load_plugin_module()
+    plugin = module.Plugin(manifest())
+    plugin.config = {"refresh_seconds": 600, "live_refresh_seconds": 20}
+
+    assert plugin.refresh_seconds == 600
+
+    upcoming = trigger_game("MLB", "1", "scheduled", "", "")
+    upcoming["starts_at"] = (datetime.now(timezone.utc) + timedelta(minutes=20)).isoformat()
+    plugin._cached_results["default"] = sports_result(module, [upcoming])
+    assert plugin.refresh_seconds == 60
+
+    plugin._cached_results["default"] = sports_result(
+        module,
+        [trigger_game("MLB", "1", "live", "1", "0")],
+    )
+    assert plugin.refresh_seconds == 20
 
 
 def test_score_change_fires_notable_trigger_once():

@@ -13,6 +13,7 @@ An installable FiestaBoard plugin for MLB and NFL scores centered on favorite te
 - Configurable final-score retention and upcoming-game window
 - Variable-mode timing through `minutes_until_start`
 - Optional start, score, and final triggers that briefly interrupt the normal rotation
+- Adaptive polling: 10 minutes when idle, 60 seconds before games, and 30 seconds live
 - Independent trigger tracking when multiple leagues overlap
 - Three ready-to-display fields designed for the 15x3 Vestaboard Note
 - No API key required
@@ -95,7 +96,10 @@ Use `team_scores.state` and `team_scores.minutes_until_start` for collection rul
 | Score Alerts | On | Trigger when a live score changes |
 | Final Alerts | On | Trigger when a game becomes final |
 | Game Start Alerts | On | Trigger when a scheduled game becomes live |
-| Refresh Interval | 120 seconds | Provider polling interval |
+| Idle Refresh Interval | 600 seconds | Used when no game is live or starting within 30 minutes |
+| Live Refresh Interval | 30 seconds | Used while a matching game is live; configurable down to 15 seconds |
+
+During the final 30 minutes before a scheduled game, the plugin automatically refreshes every 60 seconds. Once a matching game becomes live it switches to the configured live interval, then returns to the idle interval after the game becomes final.
 
 See [docs/SETUP.md](docs/SETUP.md) for configuration details.
 

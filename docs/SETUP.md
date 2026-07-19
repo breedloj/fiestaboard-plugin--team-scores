@@ -10,6 +10,8 @@
 6. Keep the default refresh and relevance settings initially.
 7. Choose **Team Scores for Note** as the trigger page.
 
+The plugin refreshes every 10 minutes while idle, every 60 seconds during the final 30 minutes before a game, and every 30 seconds while a matching game is live. The idle and live intervals are configurable.
+
 ## Recommended Note Page
 
 Create a three-line page using:

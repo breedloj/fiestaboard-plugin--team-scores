@@ -9,7 +9,7 @@
   "category": "entertainment",
   "supports_triggers": true,
   "documentation": "README.md",
-  "min_refresh_seconds": 60,
+  "min_refresh_seconds": 15,
   "settings_schema": {
     "type": "object",
     "properties": {
@@ -95,10 +95,19 @@
       },
       "refresh_seconds": {
         "type": "integer",
-        "title": "Refresh Interval (seconds)",
-        "default": 120,
-        "minimum": 60,
+        "title": "Idle Refresh Interval (seconds)",
+        "description": "Used when no game is live or starting within 30 minutes.",
+        "default": 600,
+        "minimum": 120,
         "maximum": 3600
+      },
+      "live_refresh_seconds": {
+        "type": "integer",
+        "title": "Live Refresh Interval (seconds)",
+        "description": "Used while a matching game is live. The final 30 minutes before a game use 60 seconds.",
+        "default": 30,
+        "minimum": 15,
+        "maximum": 60
       }
     },
     "required": ["leagues"]
