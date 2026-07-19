@@ -297,7 +297,8 @@ class TeamScoresPlugin(PluginBase):
         home = teams.get("home", {})
         status = raw.get("status", {})
         abstract = str(status.get("abstractGameState", "Preview")).lower()
-        state = "live" if abstract == "live" else "final" if abstract == "final" else "scheduled"
+        detailed_status = str(status.get("detailedState", ""))
+        state = _mlb_state(abstract, detailed_status)
         starts_at = _parse_datetime(raw.get("gameDate"), tz)
         away_team = _mlb_abbreviation(away.get("team", {}), "AWAY")
         home_team = _mlb_abbreviation(home.get("team", {}), "HOME")
@@ -306,7 +307,7 @@ class TeamScoresPlugin(PluginBase):
             if state == "live"
             else "FINAL"
             if state == "final"
-            else _scheduled_status(str(status.get("detailedState", "")), starts_at)
+            else _scheduled_status(detailed_status, starts_at)
         )
         return _game(
             league="MLB",
@@ -317,7 +318,7 @@ class TeamScoresPlugin(PluginBase):
             home_score=_score(home, state),
             state=state,
             status=detail,
-            detailed_status=str(status.get("detailedState", "")),
+            detailed_status=detailed_status,
             starts_at=starts_at,
         )
 
@@ -520,6 +521,17 @@ def _event_key(game: dict[str, Any]) -> str:
 
 def _mlb_abbreviation(team: dict[str, Any], fallback: str) -> str:
     return str(team.get("abbreviation") or team.get("teamCode") or team.get("name") or fallback).upper()
+
+
+def _mlb_state(abstract: str, detailed: str) -> str:
+    if abstract == "final":
+        return "final"
+    if abstract != "live":
+        return "scheduled"
+    normalized = detailed.strip().lower().replace("-", " ")
+    if normalized in {"warmup", "pre game", "pregame"}:
+        return "scheduled"
+    return "live"
 
 
 def _score(side: dict[str, Any], state: str) -> str:

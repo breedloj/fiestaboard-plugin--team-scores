@@ -136,6 +136,21 @@ def test_recent_final_ranks_ahead_of_upcoming_game():
     assert result.data["state"] == "final"
 
 
+def test_mlb_warmup_remains_scheduled_until_play_begins():
+    module = load_plugin_module()
+    plugin = module.Plugin(manifest())
+    raw = mlb_game(1, "SEA", "SF", "Live", "2026-07-18T20:00:00Z", 0, 0)
+    raw["status"]["detailedState"] = "Warmup"
+
+    warmup = plugin._parse_mlb_game(raw, timezone.utc)
+    raw["status"]["detailedState"] = "In Progress"
+    active = plugin._parse_mlb_game(raw, timezone.utc)
+
+    assert warmup["state"] == "scheduled"
+    assert warmup["away_score"] == ""
+    assert active["state"] == "live"
+
+
 def test_no_match_is_available_but_explicit():
     module = load_plugin_module()
     plugin = module.Plugin(manifest())
