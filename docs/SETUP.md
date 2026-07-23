@@ -34,7 +34,7 @@ The default page does not change when richer provider data is available. To buil
 {{team_scores.context_line}}
 ```
 
-`context_line` selects the best available live situation, broadcaster, pitching matchup, team records, series context, or venue and limits it to 15 tiles. Missing optional data resolves to an empty string.
+`context_line` selects context appropriate to the game state and limits it to 15 tiles. Pregame it can show a broadcaster or pitching matchup, live it favors the current situation, and after a final it favors series context or records. Missing optional data resolves to an empty string.
 
 ## When Games Appear
 

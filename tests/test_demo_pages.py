@@ -48,7 +48,7 @@ def test_demo_renders_at_exact_board_dimensions(device_type, demo):
         "team_scores": {
             "formatted": "SEA 4 SF 2 FINAL",
             "game_count": 2,
-            "line1": "MLB FINAL",
+            "line1": "MLB",
             "line2": "SEA 4  SF 2",
             "line3": "FINAL",
         }

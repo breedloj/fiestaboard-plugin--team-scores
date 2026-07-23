@@ -1,7 +1,7 @@
 {
   "id": "team_scores",
   "name": "Team Scores",
-  "version": "1.3.0",
+  "version": "1.3.1",
   "description": "MLB and NFL schedules, live scores, and alerts for your favorite teams.",
   "author": "Jonathan Breedlove",
   "repository": "https://github.com/breedloj/fiestaboard-plugin--team-scores",
@@ -146,7 +146,7 @@
       "has_live_game": {"description": "Whether a favorite-team game is live", "type": "boolean", "max_length": 3, "group": "primary", "example": "Yes"},
       "minutes_until_start": {"description": "Whole minutes until the primary scheduled game, or -1 otherwise", "type": "number", "max_length": 5, "group": "primary", "example": "30"},
       "event": {"description": "Trigger event: started, score, final, or none", "type": "string", "max_length": 7, "group": "primary", "example": "score"},
-      "line1": {"description": "Note-ready header", "type": "string", "max_length": 15, "group": "display", "example": "MLB LIVE"},
+      "line1": {"description": "Note-ready league header", "type": "string", "max_length": 15, "group": "display", "example": "MLB"},
       "line2": {"description": "Note-ready matchup or score", "type": "string", "max_length": 15, "group": "display", "example": "SEA 4  SF 2"},
       "line3": {"description": "Note-ready status", "type": "string", "max_length": 15, "group": "display", "example": "BOT 7 1 OUT"},
       "context_line": {"description": "Best available optional context, limited for Note", "type": "string", "max_length": 15, "group": "display", "example": "ROOT SPORTS"},
@@ -198,7 +198,7 @@
     "flagship": {
       "name": "Team Scores",
       "template": [
-        "FAVORITE SPORTS",
+        "SPORTS",
         "{{team_scores.formatted}}",
         "",
         "",

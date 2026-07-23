@@ -423,9 +423,13 @@ class TeamScoresPlugin(PluginBase):
         else:
             line2 = _score_line(game, 15)
             line3 = game["status"]
+        if game["state"] == "final":
+            header = f"{game['league']} SCORES"
+        else:
+            header = f"{game['league']} {game['state'].upper()}"
         return {
-            "header": f"{game['league']} {game['state'].upper()}",
-            "line1": _fit(f"{game['league']} {game['state'].upper()}", 15),
+            "header": _fit(header, 22),
+            "line1": _fit(game["league"], 15),
             "line2": _fit(line2, 15),
             "line3": _fit(line3, 15),
             "context_line": _context_line(game, 15),
@@ -435,8 +439,14 @@ class TeamScoresPlugin(PluginBase):
     def _format_display(self, data: dict[str, Any]) -> list[str]:
         device_type = getattr(self.board, "device_type", "flagship") if self.board else "flagship"
         if device_type == "note":
-            return [data.get("line1", "SPORTS"), data.get("line2", "NO MATCHED GAME"), data.get("line3", "")]
-        lines = [data.get("header", "FAVORITE SPORTS").center(22)]
+            return [
+                data.get("line1", "SPORTS"),
+                data.get("line2", "NO UPCOMING"),
+                data.get("line3", "GAMES"),
+            ]
+        lines = [data.get("header", "SPORTS").center(22)]
+        if not data.get("games"):
+            lines.append(_fit(data.get("formatted", "NO UPCOMING GAMES"), 22).center(22))
         for game in data.get("games", [])[:2]:
             display = self._display_fields(game)
             lines.extend([_fit(display["line2"], 22), _fit(display["line3"], 22)])
@@ -458,7 +468,7 @@ class TeamScoresPlugin(PluginBase):
             "away_color": "",
             "home_color": "",
             "state": "none",
-            "status": "NO MATCHED GAME",
+            "status": "NO UPCOMING GAMES",
             "detailed_status": "",
             "starts_at": "",
             "away_record": "",
@@ -475,12 +485,12 @@ class TeamScoresPlugin(PluginBase):
             "minutes_until_start": -1,
             "event": "none",
             "games": [],
-            "header": "FAVORITE SPORTS",
-            "line1": "FAVORITE SPORTS",
-            "line2": "NO MATCHED GAME",
-            "line3": "",
+            "header": "SPORTS",
+            "line1": "SPORTS",
+            "line2": "NO UPCOMING",
+            "line3": "GAMES",
             "context_line": "",
-            "formatted": "NO MATCHED GAME",
+            "formatted": "NO UPCOMING GAMES",
         }
 
 
@@ -651,7 +661,7 @@ def _mlb_broadcast(value: Any) -> str:
     if not tv:
         return ""
     preferred = next((item for item in tv if item.get("isNational")), tv[0])
-    return str(preferred.get("callSign") or preferred.get("name") or "")
+    return str(preferred.get("name") or preferred.get("callSign") or "")
 
 
 def _espn_broadcast(value: Any) -> str:
@@ -706,15 +716,23 @@ def _espn_event_context(value: Any) -> str:
 
 
 def _context_line(game: dict[str, Any], width: int) -> str:
-    if game.get("state") == "live" and game.get("situation"):
+    state = game.get("state")
+    if state == "live" and game.get("situation"):
         return _compact_situation(str(game["situation"]), width)
-    candidates = (
-        game.get("broadcast"),
-        game.get("pitching_matchup"),
-        _record_matchup(game),
-        game.get("series_context"),
-        game.get("venue"),
-    )
+    if state == "scheduled":
+        candidates = (
+            game.get("broadcast"),
+            game.get("pitching_matchup"),
+            _record_matchup(game),
+            game.get("series_context"),
+            game.get("venue"),
+        )
+    else:
+        candidates = (
+            game.get("series_context"),
+            _record_matchup(game),
+            game.get("venue"),
+        )
     available = [str(value).strip() for value in candidates if value]
     fallback = _fit(available[0], width) if available else ""
     return next((value for value in available if len(value) <= width), fallback)

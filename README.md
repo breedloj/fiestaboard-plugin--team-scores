@@ -65,7 +65,7 @@ These values are empty when a provider does not supply them. They are also avail
 
 | Variable | Description | Maximum |
 |---|---|---|
-| `{{team_scores.line1}}` | Note-ready league and state | 15 tiles |
+| `{{team_scores.line1}}` | Note-ready sports header | 15 tiles |
 | `{{team_scores.line2}}` | Note-ready matchup or score | 15 tiles |
 | `{{team_scores.line3}}` | Note-ready time or game detail | 15 tiles |
 | `{{team_scores.context_line}}` | Best available optional context | 15 tiles |
@@ -82,20 +82,36 @@ These values are empty when a provider does not supply them. They are also avail
 Example live game:
 
 ```text
-MLB LIVE
+MLB
 SEA 4  SF 2
 BOT 7 1 OUT
+```
+
+Example final:
+
+```text
+MLB
+CIN 5  SEA 3
+FINAL
 ```
 
 Example upcoming NFL game:
 
 ```text
-NFL SCHEDULED
+NFL
 SEA AT SF
 SUN 1:25 PM
 ```
 
-`context_line` is intentionally separate so the default page remains stable. It prefers a live game situation, then broadcast, pitching matchup, records, series context, or venue. It can be used on an alternate context page without changing the score page.
+When no configured team has an eligible game:
+
+```text
+SPORTS
+NO UPCOMING
+GAMES
+```
+
+`context_line` is intentionally separate so the default page remains stable. Pregame it prefers the broadcaster, pitching matchup, records, series context, or venue. Live it prefers the current base or down-and-distance situation. After a final it prefers series context, records, or venue, so stale broadcast information does not linger. It can be used on an alternate context page without changing the score page.
 
 ## Selection Behavior
 

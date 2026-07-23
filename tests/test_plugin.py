@@ -40,7 +40,7 @@ def test_manifest_and_plugin_id():
     module = load_plugin_module()
     plugin = module.Plugin(manifest())
     assert plugin.plugin_id == "team_scores"
-    assert manifest()["version"] == "1.3.0"
+    assert manifest()["version"] == "1.3.1"
     assert manifest()["settings_schema"]["properties"]["trigger_on_started"]["default"] is True
     assert manifest()["settings_schema"]["properties"]["live_refresh_seconds"]["default"] == 30
 
@@ -81,6 +81,7 @@ def test_filters_and_ranks_mlb_favorite_first():
     assert result.data["game_count"] == 1
     assert result.data["away_team"] == "SEA"
     assert result.data["state"] == "live"
+    assert result.data["line1"] == "MLB"
     assert len(result.data["line2"]) <= 15
     assert set(manifest()["variables"]["arrays"]["games"]["item_fields"]) <= set(
         result.data["games"][0]
@@ -110,6 +111,7 @@ def test_nfl_favorite_and_note_lines():
     assert result.available
     assert result.data["league"] == "NFL"
     assert result.data["minutes_until_start"] == 1920
+    assert result.data["line1"] == "NFL"
     assert result.data["line2"] == "SEA AT SF"
     assert result.data["away_record"] == "14-3"
     assert result.data["home_record"] == "12-5"
@@ -146,6 +148,9 @@ def test_recent_final_ranks_ahead_of_upcoming_game():
 
     assert result.data["event_id"] == "1"
     assert result.data["state"] == "final"
+    assert result.data["header"] == "MLB SCORES"
+    assert result.data["line1"] == "MLB"
+    assert result.data["line3"] == "FINAL"
 
 
 def test_mlb_warmup_remains_scheduled_until_play_begins():
@@ -163,6 +168,20 @@ def test_mlb_warmup_remains_scheduled_until_play_begins():
     assert active["state"] == "live"
 
 
+def test_postponed_game_uses_plain_league_header():
+    module = load_plugin_module()
+    plugin = module.Plugin(manifest())
+    raw = mlb_game(1, "SEA", "SF", "Preview", "2026-07-18T20:00:00Z", 0, 0)
+    raw["status"]["detailedState"] = "Postponed"
+
+    game = plugin._parse_mlb_game(raw, timezone.utc)
+    display = plugin._display_fields(game)
+
+    assert display["line1"] == "MLB"
+    assert display["line2"] == "SEA AT SF"
+    assert display["line3"] == "POSTPONED"
+
+
 def test_mlb_optional_context_fields_are_parsed_defensively():
     module = load_plugin_module()
     plugin = module.Plugin(manifest())
@@ -178,8 +197,20 @@ def test_mlb_optional_context_fields_are_parsed_defensively():
     raw.update({
         "venue": {"name": "T-Mobile Park"},
         "broadcasts": [
-            {"type": "TV", "language": "en", "callSign": "ROOT", "isNational": False},
-            {"type": "TV", "language": "en", "callSign": "FOX", "isNational": True},
+            {
+                "type": "TV",
+                "language": "en",
+                "name": "ROOT Sports Northwest",
+                "callSign": "ROOT",
+                "isNational": False,
+            },
+            {
+                "type": "TV",
+                "language": "en",
+                "name": "FOX",
+                "callSign": "FOX",
+                "isNational": True,
+            },
         ],
         "seriesGameNumber": 2,
         "gamesInSeries": 3,
@@ -230,6 +261,23 @@ def test_live_context_compacts_nfl_and_loaded_bases_for_note():
     assert module._compact_situation("RUNNERS 1ST 2ND 3RD", 15) == "ON 1ST 2ND 3RD"
 
 
+def test_context_line_uses_broadcast_only_before_game():
+    module = load_plugin_module()
+    game = {
+        "state": "scheduled",
+        "broadcast": "CINR",
+        "series_context": "GAME 3 OF 3",
+        "away_record": "52-47",
+        "home_record": "50-49",
+    }
+
+    assert module._context_line(game, 15) == "CINR"
+    game["state"] = "live"
+    assert module._context_line(game, 15) == "GAME 3 OF 3"
+    game["state"] = "final"
+    assert module._context_line(game, 15) == "GAME 3 OF 3"
+
+
 def test_no_match_is_available_but_explicit():
     module = load_plugin_module()
     plugin = module.Plugin(manifest())
@@ -238,7 +286,11 @@ def test_no_match_is_available_but_explicit():
         result = plugin.fetch_data()
     assert result.available
     assert result.data["game_count"] == 0
-    assert result.data["line2"] == "NO MATCHED GAME"
+    assert result.data["line1"] == "SPORTS"
+    assert result.data["line2"] == "NO UPCOMING"
+    assert result.data["line3"] == "GAMES"
+    assert result.data["formatted"] == "NO UPCOMING GAMES"
+    assert "NO UPCOMING GAMES" in {line.strip() for line in result.formatted_lines}
     assert set(manifest()["variables"]["simple"]) <= set(result.data)
 
 
@@ -312,6 +364,7 @@ def test_final_change_fires_trigger():
         assert plugin.check_triggers() == []
         trigger = plugin.check_triggers()[0]
     assert trigger.trigger_id == "final_mlb-1"
+    assert trigger.data["line1"] == "MLB"
     assert trigger.data["line3"] == "FINAL"
 
 
