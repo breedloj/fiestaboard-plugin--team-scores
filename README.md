@@ -16,6 +16,7 @@ An installable FiestaBoard plugin for MLB and NFL scores centered on favorite te
 - Adaptive polling: 10 minutes when idle, 60 seconds before games, and 30 seconds live
 - Independent trigger tracking when multiple leagues overlap
 - Three ready-to-display fields designed for the 15x3 Vestaboard Note
+- Curated MLB and NFL identity colors mapped to Vestaboard's tile palette
 - Optional broadcast, records, venue, pitcher, series, and live-situation variables
 - No API key required
 
@@ -53,6 +54,9 @@ These values are empty when a provider does not supply them. They are also avail
 |---|---|---|
 | `{{team_scores.away_record}}` | Away-team season record | `52-46` |
 | `{{team_scores.home_record}}` | Home-team season record | `54-44` |
+| `{{team_scores.away_team_color}}` | Away-team identity color tile | `{64}` |
+| `{{team_scores.home_team_color}}` | Home-team identity color tile | `{66}` |
+| `{{team_scores.league_color}}` | League accent color tile | `{67}` |
 | `{{team_scores.broadcast}}` | Preferred TV broadcaster | `ROOT SPORTS` |
 | `{{team_scores.venue}}` | Venue name | `T-Mobile Park` |
 | `{{team_scores.probable_pitcher_away}}` | MLB away probable pitcher | `Logan Webb` |
@@ -68,6 +72,8 @@ These values are empty when a provider does not supply them. They are also avail
 | `{{team_scores.line1}}` | Note-ready sports header | 15 tiles |
 | `{{team_scores.line2}}` | Note-ready matchup or score | 15 tiles |
 | `{{team_scores.line3}}` | Note-ready time or game detail | 15 tiles |
+| `{{team_scores.team_line}}` | Matchup or score with team identity tiles | 15 tiles |
+| `{{team_scores.accent_line1}}` | Optional league header with symmetric accents | 7 tiles |
 | `{{team_scores.context_line}}` | Best available optional context | 15 tiles |
 | `{{team_scores.formatted}}` | Compact primary game for Flagship templates | 22 tiles |
 
@@ -75,15 +81,17 @@ These values are empty when a provider does not supply them. They are also avail
 
 ```text
 {{team_scores.line1}}
-{{team_scores.line2}}
+{{team_scores.team_line}}
 {{team_scores.line3}}
 ```
+
+Center rows one and three and left-align row two. Team colors are manually curated to the closest representative Vestaboard color rather than calculated from provider data. Existing `away_color` and `home_color` variables remain result indicators and are not changed.
 
 Example live game:
 
 ```text
 MLB
-SEA 4  SF 2
+{66}SEA 4 {64}SF 2
 BOT 7 1 OUT
 ```
 
@@ -91,7 +99,7 @@ Example final:
 
 ```text
 MLB
-CIN 5  SEA 3
+{63}CIN 5 {66}SEA 3
 FINAL
 ```
 
@@ -99,7 +107,7 @@ Example upcoming NFL game:
 
 ```text
 NFL
-SEA AT SF
+{66}SEA AT {63}SF
 SUN 1:25 PM
 ```
 
@@ -110,6 +118,8 @@ SPORTS
 NO UPCOMING
 GAMES
 ```
+
+For a slightly more decorative first row, replace `line1` with `accent_line1`. The default remains the plain league header so the Note does not become overly colorful.
 
 `context_line` is intentionally separate so the default page remains stable. Pregame it prefers the broadcaster, pitching matchup, records, series context, or venue. Live it prefers the current base or down-and-distance situation. After a final it prefers series context, records, or venue, so stale broadcast information does not linger. It can be used on an alternate context page without changing the score page.
 

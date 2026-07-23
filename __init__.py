@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import math
+import re
 import threading
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -30,6 +31,79 @@ ESPN_LEAGUES = {
         "period_prefix": "Q",
     },
 }
+LEAGUE_COLORS = {
+    "MLB": "{67}",
+    "NFL": "{63}",
+}
+TEAM_COLORS = {
+    "MLB": {
+        "AZ": "{63}",
+        "ATL": "{63}",
+        "ATH": "{66}",
+        "BAL": "{64}",
+        "BOS": "{63}",
+        "CHC": "{67}",
+        "CWS": "{69}",
+        "CIN": "{63}",
+        "CLE": "{63}",
+        "COL": "{68}",
+        "DET": "{67}",
+        "HOU": "{64}",
+        "KC": "{67}",
+        "LAA": "{63}",
+        "LAD": "{67}",
+        "MIA": "{67}",
+        "MIL": "{65}",
+        "MIN": "{67}",
+        "NYM": "{64}",
+        "NYY": "{69}",
+        "PHI": "{63}",
+        "PIT": "{65}",
+        "SD": "{65}",
+        "SEA": "{66}",
+        "SF": "{64}",
+        "STL": "{63}",
+        "TB": "{67}",
+        "TEX": "{67}",
+        "TOR": "{67}",
+        "WSH": "{63}",
+    },
+    "NFL": {
+        "ARI": "{63}",
+        "ATL": "{63}",
+        "BAL": "{68}",
+        "BUF": "{67}",
+        "CAR": "{67}",
+        "CHI": "{64}",
+        "CIN": "{64}",
+        "CLE": "{64}",
+        "DAL": "{67}",
+        "DEN": "{64}",
+        "DET": "{67}",
+        "GB": "{66}",
+        "HOU": "{67}",
+        "IND": "{67}",
+        "JAX": "{67}",
+        "KC": "{63}",
+        "LV": "{69}",
+        "LAC": "{67}",
+        "LAR": "{67}",
+        "MIA": "{67}",
+        "MIN": "{68}",
+        "NE": "{67}",
+        "NO": "{65}",
+        "NYG": "{67}",
+        "NYJ": "{66}",
+        "PHI": "{66}",
+        "PIT": "{65}",
+        "SF": "{63}",
+        "SEA": "{66}",
+        "TB": "{63}",
+        "TEN": "{67}",
+        "WSH": "{65}",
+    },
+}
+COLOR_TOKEN_RE = re.compile(r"\{\d{2}\}")
 
 
 class SportsDataError(RuntimeError):
@@ -432,6 +506,8 @@ class TeamScoresPlugin(PluginBase):
             "line1": _fit(game["league"], 15),
             "line2": _fit(line2, 15),
             "line3": _fit(line3, 15),
+            "team_line": _team_line(game, 15),
+            "accent_line1": _accent_line(game),
             "context_line": _context_line(game, 15),
             "formatted": _fit(f"{line2} {line3}", 22),
         }
@@ -441,7 +517,7 @@ class TeamScoresPlugin(PluginBase):
         if device_type == "note":
             return [
                 data.get("line1", "SPORTS"),
-                data.get("line2", "NO UPCOMING"),
+                data.get("team_line", data.get("line2", "NO UPCOMING")),
                 data.get("line3", "GAMES"),
             ]
         lines = [data.get("header", "SPORTS").center(22)]
@@ -467,6 +543,9 @@ class TeamScoresPlugin(PluginBase):
             "home_margin": 0,
             "away_color": "",
             "home_color": "",
+            "away_team_color": "",
+            "home_team_color": "",
+            "league_color": "",
             "state": "none",
             "status": "NO UPCOMING GAMES",
             "detailed_status": "",
@@ -489,6 +568,8 @@ class TeamScoresPlugin(PluginBase):
             "line1": "SPORTS",
             "line2": "NO UPCOMING",
             "line3": "GAMES",
+            "team_line": "NO UPCOMING",
+            "accent_line1": "SPORTS",
             "context_line": "",
             "formatted": "NO UPCOMING GAMES",
         }
@@ -517,6 +598,7 @@ def _game(
     series_context: str = "",
 ) -> dict[str, Any]:
     margin = _margin(away_score, home_score)
+    league_color = LEAGUE_COLORS.get(league, "")
     return {
         "league": league,
         "event_id": event_id,
@@ -528,6 +610,9 @@ def _game(
         "home_margin": -margin,
         "away_color": _team_color(margin, state),
         "home_color": _team_color(-margin, state),
+        "away_team_color": _identity_color(league, away_team),
+        "home_team_color": _identity_color(league, home_team),
+        "league_color": league_color,
         "state": state,
         "status": status,
         "detailed_status": detailed_status,
@@ -832,6 +917,40 @@ def _team_color(margin: float, state: str) -> str:
     if margin < 0:
         return "{63}"
     return "{65}"
+
+
+def _identity_color(league: str, team: str) -> str:
+    return TEAM_COLORS.get(league, {}).get(team, LEAGUE_COLORS.get(league, ""))
+
+
+def _accent_line(game: dict[str, Any]) -> str:
+    color = str(game.get("league_color") or "")
+    league = str(game.get("league") or "")
+    return f"{color} {league} {color}" if color and league else league
+
+
+def _team_line(game: dict[str, Any], width: int) -> str:
+    away = str(game.get("away_team") or "AWAY")
+    home = str(game.get("home_team") or "HOME")
+    away_color = str(game.get("away_team_color") or "")
+    home_color = str(game.get("home_team_color") or "")
+    if game.get("state") == "scheduled":
+        plain = f"{away} AT {home}"
+        candidates = (f"{away_color}{away} AT {home_color}{home}", plain)
+    else:
+        away_score = str(game.get("away_score") or "0")
+        home_score = str(game.get("home_score") or "0")
+        plain = _score_line(game, width)
+        candidates = (
+            f"{away_color}{away} {away_score} {home_color}{home} {home_score}",
+            f"{away_color}{away}{away_score} {home_color}{home}{home_score}",
+            plain,
+        )
+    return next((line for line in candidates if _tile_count(line) <= width), plain)
+
+
+def _tile_count(value: str) -> int:
+    return len(COLOR_TOKEN_RE.sub("X", value))
 
 
 def _score_line(game: dict[str, Any], width: int) -> str:

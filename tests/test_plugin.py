@@ -40,7 +40,7 @@ def test_manifest_and_plugin_id():
     module = load_plugin_module()
     plugin = module.Plugin(manifest())
     assert plugin.plugin_id == "team_scores"
-    assert manifest()["version"] == "1.3.1"
+    assert manifest()["version"] == "1.4.0"
     assert manifest()["settings_schema"]["properties"]["trigger_on_started"]["default"] is True
     assert manifest()["settings_schema"]["properties"]["live_refresh_seconds"]["default"] == 30
 
@@ -82,6 +82,8 @@ def test_filters_and_ranks_mlb_favorite_first():
     assert result.data["away_team"] == "SEA"
     assert result.data["state"] == "live"
     assert result.data["line1"] == "MLB"
+    assert result.data["team_line"] == "{66}SEA 4 {64}SF 2"
+    assert module._tile_count(result.data["team_line"]) <= 15
     assert len(result.data["line2"]) <= 15
     assert set(manifest()["variables"]["arrays"]["games"]["item_fields"]) <= set(
         result.data["games"][0]
@@ -113,13 +115,15 @@ def test_nfl_favorite_and_note_lines():
     assert result.data["minutes_until_start"] == 1920
     assert result.data["line1"] == "NFL"
     assert result.data["line2"] == "SEA AT SF"
+    assert result.data["team_line"] == "{66}SEA AT {63}SF"
+    assert result.formatted_lines[1] == "{66}SEA AT {63}SF"
     assert result.data["away_record"] == "14-3"
     assert result.data["home_record"] == "12-5"
     assert result.data["broadcast"] == "NBC"
     assert result.data["venue"] == "Lumen Field"
     assert result.data["series_context"] == "Sunday Night Football"
     assert result.data["context_line"] == "NBC"
-    assert all(len(line) <= 15 for line in result.formatted_lines[:3])
+    assert all(module._tile_count(line) <= 15 for line in result.formatted_lines[:3])
     assert request.call_args.args[0] == module.ESPN_LEAGUES["NFL"]["url"]
 
 
@@ -412,6 +416,55 @@ def test_score_line_preserves_both_large_scores():
     )
     assert line == "LAFC123 VAN123"
     assert len(line) == 14
+
+
+def test_colored_team_line_falls_back_when_tiles_do_not_fit():
+    module = load_plugin_module()
+    line = module._team_line(
+        {
+            "state": "live",
+            "away_team": "LAFC",
+            "away_score": "123",
+            "home_team": "VAN",
+            "home_score": "123",
+            "away_team_color": "{67}",
+            "home_team_color": "{66}",
+        },
+        15,
+    )
+
+    assert line == "LAFC123 VAN123"
+    assert module._tile_count(line) == 14
+
+
+def test_every_selectable_team_has_a_valid_identity_color():
+    module = load_plugin_module()
+    settings = manifest()["settings_schema"]["properties"]
+    expected = {
+        "MLB": set(settings["mlb_teams"]["items"]["enum"]),
+        "NFL": set(settings["nfl_teams"]["items"]["enum"]),
+    }
+
+    assert set(module.TEAM_COLORS) == set(expected)
+    for league, teams in expected.items():
+        assert set(module.TEAM_COLORS[league]) == teams
+        assert set(module.TEAM_COLORS[league].values()) <= {
+            "{63}",
+            "{64}",
+            "{65}",
+            "{66}",
+            "{67}",
+            "{68}",
+            "{69}",
+        }
+
+
+def test_optional_accent_line_is_symmetric_and_note_safe():
+    module = load_plugin_module()
+    line = module._accent_line({"league": "MLB", "league_color": "{67}"})
+
+    assert line == "{67} MLB {67}"
+    assert module._tile_count(line) == 7
 
 
 def test_one_provider_can_fail_without_hiding_another_league():

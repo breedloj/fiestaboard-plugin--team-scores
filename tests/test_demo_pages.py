@@ -50,6 +50,7 @@ def test_demo_renders_at_exact_board_dimensions(device_type, demo):
             "game_count": 2,
             "line1": "MLB",
             "line2": "SEA 4  SF 2",
+            "team_line": "{66}SEA 4 {64}SF 2",
             "line3": "FINAL",
         }
     }

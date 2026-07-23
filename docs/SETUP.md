@@ -18,11 +18,13 @@ Create a three-line page using:
 
 ```text
 {{team_scores.line1}}
-{{team_scores.line2}}
+{{team_scores.team_line}}
 {{team_scores.line3}}
 ```
 
-Center all three rows. These fields are already limited to 15 tiles.
+Center rows one and three and left-align row two. `team_line` adds one curated identity-color tile beside each team and automatically falls back to a compact plain score if unusually large scores do not fit.
+
+To add restrained league accents around the centered first row, use `{{team_scores.accent_line1}}` instead of `{{team_scores.line1}}`.
 
 ## Optional Context Page
 
