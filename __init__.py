@@ -138,6 +138,8 @@ class TeamScoresPlugin(PluginBase):
         for key, label in (("mlb_teams", "MLB teams"), ("nfl_teams", "NFL teams")):
             if not isinstance(config.get(key, []), list):
                 errors.append(f"{label} must be a list")
+        if str(config.get("live_status_detail", "calm")).lower() not in {"calm", "detailed"}:
+            errors.append("Live status detail must be calm or detailed")
         for key, label, minimum, maximum in (
             ("lookahead_days", "Upcoming game window", 1, 14),
             ("final_max_age_hours", "Final score retention", 1, 48),
@@ -379,7 +381,7 @@ class TeamScoresPlugin(PluginBase):
         probable_pitcher_away = _person_name(away.get("probablePitcher"))
         probable_pitcher_home = _person_name(home.get("probablePitcher"))
         detail = (
-            _mlb_detail(raw)
+            _mlb_detail(raw, self._detailed_live_status())
             if state == "live"
             else "FINAL"
             if state == "final"
@@ -430,7 +432,11 @@ class TeamScoresPlugin(PluginBase):
         )
         starts_at = _parse_datetime(event.get("date"), tz)
         detail = (
-            _espn_detail(status, str(ESPN_LEAGUES[league]["period_prefix"]))
+            _espn_detail(
+                status,
+                str(ESPN_LEAGUES[league]["period_prefix"]),
+                self._detailed_live_status(),
+            )
             if state == "live"
             else "FINAL"
             if state == "final"
@@ -454,6 +460,9 @@ class TeamScoresPlugin(PluginBase):
             situation=_espn_situation(competition.get("situation")),
             series_context=_espn_event_context(competition.get("notes")),
         )
+
+    def _detailed_live_status(self) -> bool:
+        return str(self.config.get("live_status_detail", "calm")).lower() == "detailed"
 
     def _is_relevant(
         self,
@@ -845,23 +854,41 @@ def _record_matchup(game: dict[str, Any]) -> str:
     return away or home
 
 
-def _mlb_detail(raw: dict[str, Any]) -> str:
+def _mlb_detail(raw: dict[str, Any], detailed: bool) -> str:
     linescore = raw.get("linescore", {})
     inning = linescore.get("currentInning")
     half = str(linescore.get("inningHalf", "")).upper()
     prefix = {"BOTTOM": "BOT", "MIDDLE": "MID"}.get(half, half[:3])
     parts = [part for part in (prefix, str(inning or "")) if part]
-    outs = linescore.get("outs")
-    if outs not in {None, ""}:
-        parts.extend([str(outs), "OUT" if str(outs) == "1" else "OUTS"])
+    if detailed:
+        outs = linescore.get("outs")
+        if outs not in {None, ""}:
+            parts.extend([str(outs), "OUT" if str(outs) == "1" else "OUTS"])
     return " ".join(parts) or "LIVE"
 
 
-def _espn_detail(status: dict[str, Any], period_prefix: str) -> str:
+def _espn_detail(status: dict[str, Any], period_prefix: str, detailed: bool) -> str:
     period = status.get("period")
     clock = str(status.get("displayClock", "")).strip()
-    parts = [f"{period_prefix}{period}" if period else "LIVE"]
-    if clock and clock != "0:00":
+    status_type = status.get("type", {})
+    if not isinstance(status_type, dict):
+        status_type = {}
+    provider_detail = " ".join(
+        str(status_type.get(key, ""))
+        for key in ("shortDetail", "detail", "description")
+    ).upper()
+    if "HALFTIME" in provider_detail:
+        return "HALFTIME"
+    try:
+        period_number = int(period)
+    except (TypeError, ValueError):
+        period_number = 0
+    if period_prefix == "Q" and period_number > 4:
+        period_label = "OT" if period_number == 5 else f"{period_number - 4}OT"
+    else:
+        period_label = f"{period_prefix}{period_number}" if period_number else "LIVE"
+    parts = [period_label]
+    if detailed and clock and clock != "0:00":
         parts.append(clock)
     return " ".join(parts)
 

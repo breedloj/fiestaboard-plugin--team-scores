@@ -1,7 +1,7 @@
 {
   "id": "team_scores",
   "name": "Team Scores",
-  "version": "1.4.0",
+  "version": "1.5.0",
   "description": "MLB and NFL schedules, live scores, and alerts for your favorite teams.",
   "author": "Jonathan Breedlove",
   "repository": "https://github.com/breedloj/fiestaboard-plugin--team-scores",
@@ -68,6 +68,14 @@
         "minimum": 1,
         "maximum": 48
       },
+      "live_status_detail": {
+        "type": "string",
+        "title": "Live Status Detail",
+        "description": "Calm shows only the inning half or football period. Detailed also shows MLB outs or the NFL game clock.",
+        "enum": ["calm", "detailed"],
+        "enumNames": ["Calm", "Detailed"],
+        "default": "calm"
+      },
       "trigger_on_score": {
         "type": "boolean",
         "title": "Show Score Alerts",
@@ -133,7 +141,7 @@
       "home_team_color": {"description": "Home-team identity color tile", "type": "string", "max_length": 4, "group": "context", "example": "{66}"},
       "league_color": {"description": "League accent color tile", "type": "string", "max_length": 4, "group": "context", "example": "{67}"},
       "state": {"description": "scheduled, live, final, or none", "type": "string", "max_length": 9, "group": "primary", "example": "final"},
-      "status": {"description": "Game time, live detail, or final status", "type": "string", "max_length": 15, "group": "primary", "example": "FINAL"},
+      "status": {"description": "Game time, configured live detail, or final status", "type": "string", "max_length": 15, "group": "primary", "example": "BOT 7"},
       "detailed_status": {"description": "Provider-specific game status", "type": "string", "max_length": 32, "group": "primary", "example": "In Progress"},
       "starts_at": {"description": "Scheduled start time in ISO 8601 format", "type": "string", "max_length": 32, "group": "primary", "example": "2026-07-18T19:10:00-07:00"},
       "away_record": {"description": "Away-team season record when available", "type": "string", "max_length": 12, "group": "context", "example": "52-46"},
@@ -151,7 +159,7 @@
       "event": {"description": "Trigger event: started, score, final, or none", "type": "string", "max_length": 7, "group": "primary", "example": "score"},
       "line1": {"description": "Note-ready league header", "type": "string", "max_length": 15, "group": "display", "example": "MLB"},
       "line2": {"description": "Note-ready matchup or score", "type": "string", "max_length": 15, "group": "display", "example": "SEA 4  SF 2"},
-      "line3": {"description": "Note-ready status", "type": "string", "max_length": 15, "group": "display", "example": "BOT 7 1 OUT"},
+      "line3": {"description": "Note-ready status", "type": "string", "max_length": 15, "group": "display", "example": "BOT 7"},
       "team_line": {"description": "Note-ready matchup or score with team identity tiles", "type": "string", "max_length": 15, "group": "display", "example": "{66}SEA 4 {64}SF 2"},
       "accent_line1": {"description": "Optional league header with symmetric accent tiles", "type": "string", "max_length": 7, "group": "display", "example": "{67} MLB {67}"},
       "context_line": {"description": "Best available optional context, limited for Note", "type": "string", "max_length": 15, "group": "display", "example": "ROOT SPORTS"},

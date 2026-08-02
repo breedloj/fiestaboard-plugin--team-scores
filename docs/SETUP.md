@@ -7,8 +7,9 @@
 3. Select MLB, NFL, or both.
 4. Choose favorite teams separately for each league.
 5. Set the timezone used to display upcoming game times.
-6. Keep the default refresh and relevance settings initially.
-7. Choose **Team Scores for Note** as the trigger page.
+6. Keep **Live Status Detail** on **Calm** for fewer board updates, or choose **Detailed** for MLB outs and the NFL game clock.
+7. Keep the default refresh and relevance settings initially.
+8. Choose **Team Scores for Note** as the trigger page.
 
 The plugin refreshes every 10 minutes while idle, every 60 seconds during the final 30 minutes before a game, and every 30 seconds while a matching game is live. The idle and live intervals are configurable.
 

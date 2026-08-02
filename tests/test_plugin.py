@@ -40,9 +40,10 @@ def test_manifest_and_plugin_id():
     module = load_plugin_module()
     plugin = module.Plugin(manifest())
     assert plugin.plugin_id == "team_scores"
-    assert manifest()["version"] == "1.4.0"
+    assert manifest()["version"] == "1.5.0"
     assert manifest()["settings_schema"]["properties"]["trigger_on_started"]["default"] is True
     assert manifest()["settings_schema"]["properties"]["live_refresh_seconds"]["default"] == 30
+    assert manifest()["settings_schema"]["properties"]["live_status_detail"]["default"] == "calm"
 
 
 def test_fiestaboard_loader_accepts_standalone_repo(tmp_path):
@@ -82,6 +83,7 @@ def test_filters_and_ranks_mlb_favorite_first():
     assert result.data["away_team"] == "SEA"
     assert result.data["state"] == "live"
     assert result.data["line1"] == "MLB"
+    assert result.data["line3"] == "BOT 7"
     assert result.data["team_line"] == "{66}SEA 4 {64}SF 2"
     assert module._tile_count(result.data["team_line"]) <= 15
     assert len(result.data["line2"]) <= 15
@@ -91,6 +93,57 @@ def test_filters_and_ranks_mlb_favorite_first():
     assert request.call_args.kwargs["params"]["hydrate"] == (
         "team,linescore,probablePitcher,venue,broadcasts"
     )
+
+
+def test_detailed_live_status_includes_mlb_outs():
+    module = load_plugin_module()
+    plugin = module.Plugin(manifest())
+    plugin.config = {"live_status_detail": "detailed"}
+
+    game = plugin._parse_mlb_game(
+        mlb_game(1, "SEA", "SF", "Live", "2026-07-13T20:00:00Z", 4, 2),
+        timezone.utc,
+    )
+
+    assert game["status"] == "BOT 7 1 OUT"
+
+
+def test_nfl_live_status_can_be_calm_or_detailed():
+    module = load_plugin_module()
+    plugin = module.Plugin(manifest())
+    raw = nfl_game("SEA", "SF", "2026-07-14T20:00:00Z")
+    status = raw["competitions"][0]["status"]
+    status.update({"period": 3, "displayClock": "8:42"})
+    status["type"].update({"state": "in", "shortDetail": "8:42 - 3rd Quarter"})
+
+    calm = plugin._parse_espn_game(raw, timezone.utc, "NFL")
+    plugin.config = {"live_status_detail": "detailed"}
+    detailed = plugin._parse_espn_game(raw, timezone.utc, "NFL")
+
+    assert calm and calm["status"] == "Q3"
+    assert detailed and detailed["status"] == "Q3 8:42"
+
+
+def test_nfl_halftime_is_preserved_in_calm_mode():
+    module = load_plugin_module()
+    plugin = module.Plugin(manifest())
+    raw = nfl_game("SEA", "SF", "2026-07-14T20:00:00Z")
+    status = raw["competitions"][0]["status"]
+    status.update({"period": 2, "displayClock": "0:00"})
+    status["type"].update({"state": "in", "shortDetail": "Halftime"})
+
+    game = plugin._parse_espn_game(raw, timezone.utc, "NFL")
+
+    assert game and game["status"] == "HALFTIME"
+
+
+def test_invalid_live_status_detail_is_rejected():
+    module = load_plugin_module()
+    plugin = module.Plugin(manifest())
+
+    errors = plugin.validate_config({"leagues": ["MLB"], "live_status_detail": "play-by-play"})
+
+    assert "Live status detail must be calm or detailed" in errors
 
 
 def test_nfl_favorite_and_note_lines():

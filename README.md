@@ -14,6 +14,7 @@ An installable FiestaBoard plugin for MLB and NFL scores centered on favorite te
 - Variable-mode timing through `minutes_until_start`
 - Optional start, score, and final triggers that briefly interrupt the normal rotation
 - Adaptive polling: 10 minutes when idle, 60 seconds before games, and 30 seconds live
+- Configurable calm or detailed live status
 - Independent trigger tracking when multiple leagues overlap
 - Three ready-to-display fields designed for the 15x3 Vestaboard Note
 - Curated MLB and NFL identity colors mapped to Vestaboard's tile palette
@@ -42,7 +43,7 @@ No API key is required.
 | `{{team_scores.home_team}}` | Home-team abbreviation | `SF` |
 | `{{team_scores.away_score}}` | Away score when available | `4` |
 | `{{team_scores.home_score}}` | Home score when available | `2` |
-| `{{team_scores.status}}` | Start time, live detail, or final status | `BOT 7 1 OUT` |
+| `{{team_scores.status}}` | Start time, configured live detail, or final status | `BOT 7` |
 | `{{team_scores.minutes_until_start}}` | Minutes until a scheduled game, otherwise `-1` | `30` |
 | `{{team_scores.games}}` | Relevant games ordered by live, recent final, then upcoming | array |
 
@@ -92,7 +93,7 @@ Example live game:
 ```text
 MLB
 {66}SEA 4 {64}SF 2
-BOT 7 1 OUT
+BOT 7
 ```
 
 Example final:
@@ -139,6 +140,7 @@ Use `team_scores.state` and `team_scores.minutes_until_start` for collection rul
 | Timezone | America/Los_Angeles | Timezone used for scheduled game times |
 | Upcoming Game Window | 7 days | How far ahead scheduled games remain eligible |
 | Keep Final Scores | 12 hours | How long completed games remain eligible |
+| Live Status Detail | Calm | Calm shows inning halves or football periods; Detailed adds MLB outs or the NFL clock |
 | Score Alerts | On | Trigger when a live score changes |
 | Final Alerts | On | Trigger when a game becomes final |
 | Game Start Alerts | On | Trigger when a scheduled game becomes live |
