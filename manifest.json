@@ -1,7 +1,7 @@
 {
   "id": "team_scores",
   "name": "Team Scores",
-  "version": "1.5.1",
+  "version": "1.6.0",
   "description": "MLB and NFL schedules, live scores, and alerts for your favorite teams.",
   "author": "Jonathan Breedlove",
   "repository": "https://github.com/breedloj/fiestaboard-plugin--team-scores",
@@ -47,6 +47,12 @@
         "default": [],
         "maxItems": 10,
         "uniqueItems": true
+      },
+      "include_all_playoffs": {
+        "type": "boolean",
+        "title": "Include All Playoff Games",
+        "description": "Include every postseason game from enabled leagues in addition to favorite-team games.",
+        "default": false
       },
       "timezone": {
         "type": "string",
@@ -141,6 +147,8 @@
       "home_team_color": {"description": "Home-team identity color tile", "type": "string", "max_length": 4, "group": "context", "example": "{66}"},
       "league_color": {"description": "League accent color tile", "type": "string", "max_length": 4, "group": "context", "example": "{67}"},
       "state": {"description": "scheduled, live, final, or none", "type": "string", "max_length": 9, "group": "primary", "example": "final"},
+      "is_favorite": {"description": "Whether the game involves a configured favorite team", "type": "boolean", "max_length": 3, "group": "primary", "example": "Yes"},
+      "is_postseason": {"description": "Whether the game is a postseason matchup", "type": "boolean", "max_length": 3, "group": "primary", "example": "Yes"},
       "status": {"description": "Game time, configured live detail, or final status", "type": "string", "max_length": 15, "group": "primary", "example": "BOT 7"},
       "detailed_status": {"description": "Provider-specific game status", "type": "string", "max_length": 32, "group": "primary", "example": "In Progress"},
       "starts_at": {"description": "Scheduled start time in ISO 8601 format", "type": "string", "max_length": 32, "group": "primary", "example": "2026-07-18T19:10:00-07:00"},
@@ -154,7 +162,7 @@
       "situation": {"description": "MLB occupied bases or NFL down-and-distance when available", "type": "string", "max_length": 48, "group": "context", "example": "RUNNERS 1ST 3RD"},
       "series_context": {"description": "MLB series game or NFL event label", "type": "string", "max_length": 64, "group": "context", "example": "GAME 2 OF 3"},
       "game_count": {"description": "Number of matching relevant games", "type": "number", "max_length": 2, "group": "primary", "example": "2"},
-      "has_live_game": {"description": "Whether a favorite-team game is live", "type": "boolean", "max_length": 3, "group": "primary", "example": "Yes"},
+      "has_live_game": {"description": "Whether any matching game is live", "type": "boolean", "max_length": 3, "group": "primary", "example": "Yes"},
       "minutes_until_start": {"description": "Whole minutes until the primary scheduled game, or -1 otherwise", "type": "number", "max_length": 5, "group": "primary", "example": "30"},
       "event": {"description": "Trigger event: started, score, final, or none", "type": "string", "max_length": 7, "group": "primary", "example": "score"},
       "line1": {"description": "Note-ready league header", "type": "string", "max_length": 15, "group": "display", "example": "MLB"},
@@ -168,7 +176,7 @@
     "arrays": {
       "games": {
         "label_field": "event_id",
-        "item_fields": ["event_id", "league", "away_team", "home_team", "away_score", "home_score", "away_margin", "home_margin", "state", "status", "detailed_status", "starts_at", "minutes_until_start", "away_color", "home_color", "away_team_color", "home_team_color", "league_color", "away_record", "home_record", "venue", "broadcast", "probable_pitcher_away", "probable_pitcher_home", "pitching_matchup", "situation", "series_context"]
+        "item_fields": ["event_id", "league", "away_team", "home_team", "away_score", "home_score", "away_margin", "home_margin", "state", "is_favorite", "is_postseason", "status", "detailed_status", "starts_at", "minutes_until_start", "away_color", "home_color", "away_team_color", "home_team_color", "league_color", "away_record", "home_record", "venue", "broadcast", "probable_pitcher_away", "probable_pitcher_home", "pitching_matchup", "situation", "series_context"]
       }
     }
   },
@@ -182,6 +190,8 @@
     "games.*.away_margin": 5,
     "games.*.home_margin": 5,
     "games.*.state": 9,
+    "games.*.is_favorite": 3,
+    "games.*.is_postseason": 3,
     "games.*.status": 15,
     "games.*.detailed_status": 32,
     "games.*.starts_at": 32,

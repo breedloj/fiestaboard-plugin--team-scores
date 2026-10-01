@@ -9,7 +9,8 @@ An installable FiestaBoard plugin for MLB and NFL scores centered on favorite te
 - MLB schedules and scores from the official MLB Stats API
 - NFL schedules and scores from ESPN's public team schedule and scoreboard feeds
 - Separate favorite-team selectors for MLB and NFL
-- Relevance order: live games, recent finals, then upcoming games
+- Optional all-postseason coverage for every enabled league
+- Relevance order: live games, imminent starts, recent finals, then later games
 - Configurable final-score retention and upcoming-game window
 - Variable-mode timing through `minutes_until_start`
 - Optional start, score, and final triggers that briefly interrupt the normal rotation
@@ -39,6 +40,8 @@ No API key is required.
 |---|---|---|
 | `{{team_scores.league}}` | League for the most relevant game | `MLB` |
 | `{{team_scores.state}}` | `scheduled`, `live`, `final`, or `none` | `live` |
+| `{{team_scores.is_favorite}}` | Whether the game involves a configured favorite | `Yes` |
+| `{{team_scores.is_postseason}}` | Whether the game is a postseason matchup | `Yes` |
 | `{{team_scores.away_team}}` | Away-team abbreviation | `SEA` |
 | `{{team_scores.home_team}}` | Home-team abbreviation | `SF` |
 | `{{team_scores.away_score}}` | Away score when available | `4` |
@@ -126,7 +129,9 @@ For a slightly more decorative first row, replace `line1` with `accent_line1`. T
 
 ## Selection Behavior
 
-Configure MLB and NFL favorites independently in the FiestaBoard UI. If a league's favorite list is empty, all games from that league are eligible. The primary fields always describe the highest-ranked relevant game.
+Configure MLB and NFL favorites independently in the FiestaBoard UI. If a league's favorite list is empty, all games from that league are eligible. **Include All Playoff Games** adds every postseason matchup from enabled leagues while preserving favorite-team priority. The primary fields always describe the highest-ranked relevant game.
+
+The Note displays one game at a time. Live games rank first, followed by games starting within 90 minutes, recent finals, and later scheduled games. Favorite-team games win within each tier. This lets the next game of a doubleheader or playoff slate replace an earlier final as first pitch or kickoff approaches, while `team_scores.games` retains every relevant matchup for larger boards and custom templates.
 
 Use `team_scores.state` and `team_scores.minutes_until_start` for collection rules. Start, score, and final changes are better handled by FiestaBoard triggers: enable the alert types, choose **Team Scores for Note** as the trigger page, and the normal page or collection resumes when the alert expires. Each league's event identifiers are tracked independently during the MLB/NFL overlap.
 
@@ -137,6 +142,7 @@ Use `team_scores.state` and `team_scores.minutes_until_start` for collection rul
 | Leagues | MLB and NFL | Enable either league or both |
 | Favorite MLB Teams | All teams | Limit MLB games to selected teams |
 | Favorite NFL Teams | All teams | Limit NFL games to selected teams |
+| Include All Playoff Games | Off | Add every postseason game from enabled leagues while keeping favorites first |
 | Timezone | America/Los_Angeles | Timezone used for scheduled game times |
 | Upcoming Game Window | 7 days | How far ahead scheduled games remain eligible |
 | Keep Final Scores | 12 hours | How long completed games remain eligible |

@@ -23,7 +23,9 @@ DEFAULT_IDLE_REFRESH_SECONDS = 600
 DEFAULT_LIVE_REFRESH_SECONDS = 30
 PREGAME_REFRESH_SECONDS = 60
 PREGAME_WINDOW = timedelta(minutes=30)
+UPCOMING_OVER_FINAL_WINDOW = timedelta(minutes=90)
 SUPPORTED_LEAGUES = ("MLB", "NFL")
+MLB_POSTSEASON_GAME_TYPES = {"P", "F", "D", "L", "W"}
 ESPN_LEAGUES = {
     "NFL": {
         "url": "https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard",
@@ -224,7 +226,7 @@ class TeamScoresPlugin(PluginBase):
         games = [game for game in games if self._is_relevant(game, now, lookahead_days, final_max_age)]
         for game in games:
             game["minutes_until_start"] = _minutes_until_start(game, now)
-        games.sort(key=self._sort_key)
+        games.sort(key=lambda game: self._sort_key(game, now))
 
         if not games:
             if successful_leagues == 0:
@@ -319,6 +321,7 @@ class TeamScoresPlugin(PluginBase):
         }
         payload = _request_json(MLB_SCHEDULE_URL, params, "MLB")
         favorites = {str(team).strip().upper() for team in self.config.get("mlb_teams", [])}
+        include_all_playoffs = bool(self.config.get("include_all_playoffs", False))
         games: list[dict[str, Any]] = []
         date_groups = payload.get("dates", [])
         if not isinstance(date_groups, list):
@@ -330,7 +333,13 @@ class TeamScoresPlugin(PluginBase):
                 if not isinstance(raw, dict):
                     continue
                 game = self._parse_mlb_game(raw, now.tzinfo)
-                if not favorites or {game["away_team"], game["home_team"]} & favorites:
+                favorite_match = bool({game["away_team"], game["home_team"]} & favorites)
+                game["is_favorite"] = favorite_match
+                if (
+                    not favorites
+                    or favorite_match
+                    or (include_all_playoffs and game["is_postseason"])
+                ):
                     games.append(game)
         return games
 
@@ -355,9 +364,10 @@ class TeamScoresPlugin(PluginBase):
             str(team).strip().upper()
             for team in self.config.get(str(spec["teams_config"]), [])
         }
+        include_all_playoffs = bool(self.config.get("include_all_playoffs", False))
         payloads: list[dict[str, Any]] = []
+        errors: list[str] = []
         if favorites:
-            errors: list[str] = []
             for team in sorted(favorites):
                 try:
                     payloads.append(
@@ -369,14 +379,23 @@ class TeamScoresPlugin(PluginBase):
                     )
                 except SportsDataError as exc:
                     errors.append(str(exc))
-            if not payloads:
-                raise SportsDataError("; ".join(errors))
-            if errors:
-                logger.warning("Some %s team schedules failed: %s", league, "; ".join(errors))
+            if include_all_playoffs and _nfl_postseason_window(now, lookahead_days):
+                try:
+                    payloads.append(_request_json(str(spec["url"]), {}, f"{league} playoffs"))
+                except SportsDataError as exc:
+                    errors.append(str(exc))
         else:
             # ESPN rejects date ranges on this endpoint. Its unfiltered response
             # is the current scoreboard, which is appropriate for all-team mode.
-            payloads.append(_request_json(str(spec["url"]), {}, league))
+            try:
+                payloads.append(_request_json(str(spec["url"]), {}, league))
+            except SportsDataError as exc:
+                errors.append(str(exc))
+
+        if not payloads:
+            raise SportsDataError("; ".join(errors))
+        if errors:
+            logger.warning("Some %s schedules failed: %s", league, "; ".join(errors))
 
         games: list[dict[str, Any]] = []
         seen_events: set[str] = set()
@@ -388,7 +407,13 @@ class TeamScoresPlugin(PluginBase):
                 if not isinstance(event, dict):
                     continue
                 game = self._parse_espn_game(event, now.tzinfo, league)
-                if not game or (favorites and not {game["away_team"], game["home_team"]} & favorites):
+                if not game:
+                    continue
+                favorite_match = bool({game["away_team"], game["home_team"]} & favorites)
+                game["is_favorite"] = favorite_match
+                if favorites and not favorite_match and not (
+                    include_all_playoffs and game["is_postseason"]
+                ):
                     continue
                 event_id = str(game.get("event_id", ""))
                 if event_id and event_id in seen_events:
@@ -438,6 +463,7 @@ class TeamScoresPlugin(PluginBase):
             pitching_matchup=_pitching_matchup(probable_pitcher_away, probable_pitcher_home),
             situation=_mlb_situation(raw),
             series_context=_mlb_series_context(raw),
+            is_postseason=_mlb_is_postseason(raw),
         )
 
     def _parse_espn_game(
@@ -490,6 +516,7 @@ class TeamScoresPlugin(PluginBase):
             broadcast=_espn_broadcast(competition.get("broadcasts")),
             situation=_espn_situation(competition.get("situation")),
             series_context=_espn_event_context(competition.get("notes")),
+            is_postseason=_espn_is_postseason(event),
         )
 
     def _detailed_live_status(self) -> bool:
@@ -512,13 +539,22 @@ class TeamScoresPlugin(PluginBase):
         return starts_at <= now + timedelta(days=lookahead_days)
 
     @staticmethod
-    def _sort_key(game: dict[str, Any]) -> tuple[int, float]:
+    def _sort_key(game: dict[str, Any], now: datetime) -> tuple[int, int, float]:
         timestamp = _timestamp(game.get("starts_at"))
+        favorite_rank = 0 if game.get("is_favorite") else 1
         if game["state"] == "live":
-            return 0, timestamp
+            return 0, favorite_rank, timestamp
+        starts_at = _parse_datetime(game.get("starts_at"), now.tzinfo)
+        if (
+            game["state"] == "scheduled"
+            and game.get("status") not in {"POSTPONED", "CANCELLED"}
+            and starts_at
+            and starts_at - now <= UPCOMING_OVER_FINAL_WINDOW
+        ):
+            return 1, favorite_rank, timestamp
         if game["state"] == "final":
-            return 1, -timestamp
-        return 2, timestamp
+            return 2, favorite_rank, -timestamp
+        return 3, favorite_rank, timestamp
 
     def _timezone(self) -> ZoneInfo:
         try:
@@ -599,6 +635,8 @@ class TeamScoresPlugin(PluginBase):
             "pitching_matchup": "",
             "situation": "",
             "series_context": "",
+            "is_favorite": False,
+            "is_postseason": False,
             "game_count": 0,
             "has_live_game": False,
             "minutes_until_start": -1,
@@ -636,6 +674,8 @@ def _game(
     pitching_matchup: str = "",
     situation: str = "",
     series_context: str = "",
+    is_favorite: bool = False,
+    is_postseason: bool = False,
 ) -> dict[str, Any]:
     margin = _margin(away_score, home_score)
     league_color = LEAGUE_COLORS.get(league, "")
@@ -666,6 +706,8 @@ def _game(
         "pitching_matchup": pitching_matchup,
         "situation": situation,
         "series_context": series_context,
+        "is_favorite": is_favorite,
+        "is_postseason": is_postseason,
     }
 
 
@@ -702,6 +744,19 @@ def _event_key(game: dict[str, Any]) -> str:
 
 def _mlb_abbreviation(team: dict[str, Any], fallback: str) -> str:
     return str(team.get("abbreviation") or team.get("teamCode") or team.get("name") or fallback).upper()
+
+
+def _mlb_is_postseason(raw: dict[str, Any]) -> bool:
+    return str(raw.get("gameType") or "").upper() in MLB_POSTSEASON_GAME_TYPES
+
+
+def _espn_is_postseason(event: dict[str, Any]) -> bool:
+    season = event.get("season")
+    if not isinstance(season, dict):
+        return False
+    season_type = str(season.get("type") or "").lower()
+    slug = str(season.get("slug") or "").lower()
+    return season_type == "3" or "postseason" in slug or "post-season" in slug
 
 
 def _mlb_state(abstract: str, detailed: str) -> str:
@@ -1026,6 +1081,11 @@ def _score_line(game: dict[str, Any], width: int) -> str:
 
 def _football_season_year(now: datetime) -> int:
     return now.year - 1 if now.month <= 2 else now.year
+
+
+def _nfl_postseason_window(now: datetime, lookahead_days: int) -> bool:
+    end = now + timedelta(days=lookahead_days)
+    return now.month in {1, 2} or (now.month == 12 and end.year > now.year)
 
 
 def _request_json(url: str, params: dict[str, Any], provider: str) -> dict[str, Any]:

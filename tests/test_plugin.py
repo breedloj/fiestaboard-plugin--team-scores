@@ -40,7 +40,8 @@ def test_manifest_and_plugin_id():
     module = load_plugin_module()
     plugin = module.Plugin(manifest())
     assert plugin.plugin_id == "team_scores"
-    assert manifest()["version"] == "1.5.1"
+    assert manifest()["version"] == "1.6.0"
+    assert manifest()["settings_schema"]["properties"]["include_all_playoffs"]["default"] is False
     assert manifest()["settings_schema"]["properties"]["trigger_on_started"]["default"] is True
     assert manifest()["settings_schema"]["properties"]["live_refresh_seconds"]["default"] == 30
     assert manifest()["settings_schema"]["properties"]["live_status_detail"]["default"] == "calm"
@@ -208,6 +209,114 @@ def test_nfl_january_uses_previous_season_schedule():
 
     assert module._football_season_year(datetime(2027, 1, 10, tzinfo=timezone.utc)) == 2026
     assert module._football_season_year(datetime(2027, 3, 1, tzinfo=timezone.utc)) == 2027
+    assert not module._nfl_postseason_window(datetime(2026, 12, 1, tzinfo=timezone.utc), 14)
+    assert module._nfl_postseason_window(datetime(2026, 12, 25, tzinfo=timezone.utc), 14)
+
+
+def test_all_playoffs_adds_nonfavorite_mlb_games_but_not_regular_games():
+    module = load_plugin_module()
+    plugin = module.Plugin(manifest())
+    plugin.config = {
+        "leagues": ["MLB"],
+        "mlb_teams": ["SEA"],
+        "include_all_playoffs": True,
+        "timezone": "UTC",
+        "lookahead_days": 7,
+    }
+    payload = {
+        "dates": [{
+            "games": [
+                mlb_game(1, "SEA", "SF", "Preview", "2026-10-02T20:20:00Z", 0, 0),
+                mlb_game(
+                    2,
+                    "LAD",
+                    "PHI",
+                    "Preview",
+                    "2026-10-02T19:30:00Z",
+                    0,
+                    0,
+                    game_type="D",
+                ),
+                mlb_game(3, "NYY", "BOS", "Preview", "2026-10-03T20:00:00Z", 0, 0),
+            ]
+        }]
+    }
+    with patch.object(module.requests, "get", return_value=response(payload)), patch.object(
+        plugin, "_now", return_value=datetime(2026, 10, 2, 19, tzinfo=timezone.utc)
+    ):
+        result = plugin.fetch_data()
+
+    assert [game["event_id"] for game in result.data["games"]] == ["1", "2"]
+    assert result.data["is_favorite"] is True
+    assert result.data["games"][1]["is_postseason"] is True
+    assert result.data["games"][1]["is_favorite"] is False
+
+
+def test_nonfavorite_postseason_games_remain_opt_in():
+    module = load_plugin_module()
+    plugin = module.Plugin(manifest())
+    plugin.config = {
+        "leagues": ["MLB"],
+        "mlb_teams": ["SEA"],
+        "timezone": "UTC",
+    }
+    payload = {
+        "dates": [{
+            "games": [
+                mlb_game(
+                    2,
+                    "LAD",
+                    "PHI",
+                    "Preview",
+                    "2026-10-02T19:30:00Z",
+                    0,
+                    0,
+                    game_type="D",
+                ),
+            ]
+        }]
+    }
+    with patch.object(module.requests, "get", return_value=response(payload)), patch.object(
+        plugin, "_now", return_value=datetime(2026, 10, 2, 12, tzinfo=timezone.utc)
+    ):
+        result = plugin.fetch_data()
+
+    assert result.available
+    assert result.data["game_count"] == 0
+
+
+def test_all_playoffs_adds_and_deduplicates_nfl_postseason_scoreboard():
+    module = load_plugin_module()
+    plugin = module.Plugin(manifest())
+    plugin.config = {
+        "leagues": ["NFL"],
+        "nfl_teams": ["SEA"],
+        "include_all_playoffs": True,
+        "timezone": "UTC",
+        "lookahead_days": 7,
+    }
+    favorite = nfl_game(
+        "SEA", "SF", "2027-01-10T20:00:00Z", event_id="nfl-favorite", season_type=3
+    )
+    other_playoff = nfl_game(
+        "DAL", "PHI", "2027-01-10T18:00:00Z", event_id="nfl-playoff", season_type=3
+    )
+    regular = nfl_game(
+        "NYG", "WSH", "2027-01-09T18:00:00Z", event_id="nfl-regular", season_type=2
+    )
+    replies = [response({"events": [favorite]}), response({"events": [favorite, other_playoff, regular]})]
+    with patch.object(module.requests, "get", side_effect=replies) as request, patch.object(
+        plugin, "_now", return_value=datetime(2027, 1, 9, 12, tzinfo=timezone.utc)
+    ):
+        result = plugin.fetch_data()
+
+    assert request.call_count == 2
+    assert [game["event_id"] for game in result.data["games"]] == [
+        "nfl-favorite",
+        "nfl-playoff",
+    ]
+    assert result.data["is_favorite"] is True
+    assert all(game["is_postseason"] for game in result.data["games"])
 
 
 def test_recent_final_ranks_ahead_of_upcoming_game():
@@ -238,6 +347,33 @@ def test_recent_final_ranks_ahead_of_upcoming_game():
     assert result.data["header"] == "MLB SCORES"
     assert result.data["line1"] == "MLB"
     assert result.data["line3"] == "FINAL"
+
+
+def test_approaching_second_game_ranks_ahead_of_recent_final():
+    module = load_plugin_module()
+    plugin = module.Plugin(manifest())
+    plugin.config = {
+        "leagues": ["MLB"],
+        "mlb_teams": ["SEA"],
+        "timezone": "UTC",
+        "lookahead_days": 7,
+        "final_max_age_hours": 12,
+    }
+    payload = {
+        "dates": [{
+            "games": [
+                mlb_game(1, "SEA", "SF", "Final", "2026-07-13T18:00:00Z", 4, 2),
+                mlb_game(2, "SEA", "SF", "Preview", "2026-07-13T21:45:00Z", 0, 0),
+            ]
+        }]
+    }
+    with patch.object(module.requests, "get", return_value=response(payload)), patch.object(
+        plugin, "_now", return_value=datetime(2026, 7, 13, 21, tzinfo=timezone.utc)
+    ):
+        result = plugin.fetch_data()
+
+    assert result.data["event_id"] == "2"
+    assert result.data["state"] == "scheduled"
 
 
 def test_mlb_warmup_remains_scheduled_until_play_begins():
@@ -650,10 +786,11 @@ def sports_result(module, games):
     )
 
 
-def mlb_game(game_id, away, home, state, starts_at, away_score, home_score):
+def mlb_game(game_id, away, home, state, starts_at, away_score, home_score, game_type="R"):
     return {
         "gamePk": game_id,
         "gameDate": starts_at,
+        "gameType": game_type,
         "status": {"abstractGameState": state, "detailedState": state},
         "teams": {
             "away": {"team": {"abbreviation": away}, "score": away_score},
@@ -663,10 +800,15 @@ def mlb_game(game_id, away, home, state, starts_at, away_score, home_score):
     }
 
 
-def nfl_game(away, home, starts_at):
+def nfl_game(away, home, starts_at, event_id="nfl-1", season_type=2):
     return {
-        "id": "nfl-1",
+        "id": event_id,
         "date": starts_at,
+        "season": {
+            "year": int(starts_at[:4]),
+            "type": season_type,
+            "slug": "postseason" if season_type == 3 else "regular-season",
+        },
         "competitions": [{
             "competitors": [
                 {

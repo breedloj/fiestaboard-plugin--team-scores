@@ -6,10 +6,11 @@
 2. Open **Integrations** and enable **Team Scores**.
 3. Select MLB, NFL, or both.
 4. Choose favorite teams separately for each league.
-5. Set the timezone used to display upcoming game times.
-6. Keep **Live Status Detail** on **Calm** for fewer board updates, or choose **Detailed** for MLB outs and the NFL game clock.
-7. Keep the default refresh and relevance settings initially.
-8. Choose **Team Scores for Note** as the trigger page.
+5. Optionally enable **Include All Playoff Games** to add every postseason matchup from enabled leagues.
+6. Set the timezone used to display upcoming game times.
+7. Keep **Live Status Detail** on **Calm** for fewer board updates, or choose **Detailed** for MLB outs and the NFL game clock.
+8. Keep the default refresh and relevance settings initially.
+9. Choose **Team Scores for Note** as the trigger page.
 
 The plugin refreshes every 10 minutes while idle, every 60 seconds during the final 30 minutes before a game, and every 30 seconds while a matching game is live. The idle and live intervals are configurable.
 
@@ -42,8 +43,10 @@ The default page does not change when richer provider data is available. To buil
 ## When Games Appear
 
 - Live matching games rank first.
-- Recently completed games rank next and remain eligible for the configured number of hours.
-- Upcoming matching games follow, ordered by start time.
+- Games starting within 90 minutes rank ahead of recent finals, allowing a doubleheader's next game or the next playoff matchup to take over naturally.
+- Recently completed games remain eligible for the configured number of hours.
+- Later upcoming games follow, ordered by start time.
+- Favorite-team games rank ahead of general postseason games within each tier.
 - Older finals are removed automatically.
 - If no favorite teams are selected for a league, all teams in that league are eligible.
 
