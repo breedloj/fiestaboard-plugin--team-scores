@@ -134,7 +134,7 @@ class TeamScoresPlugin(PluginBase):
             errors.append("Leagues must be a list")
             leagues: list[str] = []
         else:
-            leagues = [str(league).strip().upper() for league in raw_leagues]
+            leagues = _normalized_choices(raw_leagues)
         if not leagues:
             errors.append("Select at least one league")
         invalid = sorted(set(leagues) - set(SUPPORTED_LEAGUES))
@@ -204,10 +204,9 @@ class TeamScoresPlugin(PluginBase):
 
         tz = self._timezone()
         now = self._now(tz)
-        leagues = [
-            str(league).strip().upper()
-            for league in self.config.get("leagues", list(SUPPORTED_LEAGUES))
-        ]
+        leagues = _normalized_choices(
+            self.config.get("leagues", list(SUPPORTED_LEAGUES))
+        )
         lookahead_days = max(1, min(14, int(self.config.get("lookahead_days", 7))))
         final_max_age = timedelta(hours=max(1, float(self.config.get("final_max_age_hours", 12))))
         games: list[dict[str, Any]] = []
@@ -320,7 +319,7 @@ class TeamScoresPlugin(PluginBase):
             "hydrate": "team,linescore,probablePitcher,venue,broadcasts",
         }
         payload = _request_json(MLB_SCHEDULE_URL, params, "MLB")
-        favorites = {str(team).strip().upper() for team in self.config.get("mlb_teams", [])}
+        favorites = set(_normalized_choices(self.config.get("mlb_teams", [])))
         include_all_playoffs = bool(self.config.get("include_all_playoffs", False))
         games: list[dict[str, Any]] = []
         date_groups = payload.get("dates", [])
@@ -360,10 +359,9 @@ class TeamScoresPlugin(PluginBase):
         lookahead_days: int,
     ) -> list[dict[str, Any]]:
         spec = ESPN_LEAGUES[league]
-        favorites = {
-            str(team).strip().upper()
-            for team in self.config.get(str(spec["teams_config"]), [])
-        }
+        favorites = set(
+            _normalized_choices(self.config.get(str(spec["teams_config"]), []))
+        )
         include_all_playoffs = bool(self.config.get("include_all_playoffs", False))
         payloads: list[dict[str, Any]] = []
         errors: list[str] = []
@@ -1081,6 +1079,14 @@ def _score_line(game: dict[str, Any], width: int) -> str:
 
 def _football_season_year(now: datetime) -> int:
     return now.year - 1 if now.month <= 2 else now.year
+
+
+def _normalized_choices(values: Any) -> list[str]:
+    return [
+        normalized
+        for value in values
+        if (normalized := str(value).strip().upper())
+    ]
 
 
 def _nfl_postseason_window(now: datetime, lookahead_days: int) -> bool:

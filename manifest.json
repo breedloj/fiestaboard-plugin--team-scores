@@ -1,7 +1,7 @@
 {
   "id": "team_scores",
   "name": "Team Scores",
-  "version": "1.6.0",
+  "version": "1.6.1",
   "description": "MLB and NFL schedules, live scores, and alerts for your favorite teams.",
   "author": "Jonathan Breedlove",
   "repository": "https://github.com/breedloj/fiestaboard-plugin--team-scores",

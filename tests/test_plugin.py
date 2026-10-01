@@ -40,7 +40,7 @@ def test_manifest_and_plugin_id():
     module = load_plugin_module()
     plugin = module.Plugin(manifest())
     assert plugin.plugin_id == "team_scores"
-    assert manifest()["version"] == "1.6.0"
+    assert manifest()["version"] == "1.6.1"
     assert manifest()["settings_schema"]["properties"]["include_all_playoffs"]["default"] is False
     assert manifest()["settings_schema"]["properties"]["trigger_on_started"]["default"] is True
     assert manifest()["settings_schema"]["properties"]["live_refresh_seconds"]["default"] == 30
@@ -145,6 +145,30 @@ def test_invalid_live_status_detail_is_rejected():
     errors = plugin.validate_config({"leagues": ["MLB"], "live_status_detail": "play-by-play"})
 
     assert "Live status detail must be calm or detailed" in errors
+
+
+def test_blank_dynamic_form_rows_are_ignored():
+    module = load_plugin_module()
+    plugin = module.Plugin(manifest())
+    config = {
+        "leagues": ["NFL", "MLB", ""],
+        "mlb_teams": ["SEA", " "],
+        "nfl_teams": ["SEA", ""],
+        "timezone": "UTC",
+    }
+
+    assert plugin.validate_config(config) == []
+    assert module._normalized_choices(config["leagues"]) == ["NFL", "MLB"]
+    assert module._normalized_choices(config["mlb_teams"]) == ["SEA"]
+    assert module._normalized_choices(config["nfl_teams"]) == ["SEA"]
+
+    plugin.config = config
+    game = trigger_game("NFL", "1", "live", "7", "0")
+    with patch.object(plugin, "_fetch_league", side_effect=[[game], []]) as fetch:
+        result = plugin.fetch_data()
+
+    assert result.available
+    assert [call.args[0] for call in fetch.call_args_list] == ["NFL", "MLB"]
 
 
 def test_nfl_favorite_and_note_lines():
