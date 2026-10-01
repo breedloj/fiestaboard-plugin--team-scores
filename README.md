@@ -7,7 +7,7 @@ An installable FiestaBoard plugin for MLB and NFL scores centered on favorite te
 ## Highlights
 
 - MLB schedules and scores from the official MLB Stats API
-- NFL schedules and scores from ESPN's public scoreboard feed
+- NFL schedules and scores from ESPN's public team schedule and scoreboard feeds
 - Separate favorite-team selectors for MLB and NFL
 - Relevance order: live games, recent finals, then upcoming games
 - Configurable final-score retention and upcoming-game window
@@ -153,7 +153,7 @@ See [docs/SETUP.md](docs/SETUP.md) for configuration details.
 
 ## Data Notes
 
-The MLB Stats API is an official public feed. ESPN's NFL scoreboard endpoint is public but undocumented, so its contract is isolated behind a league-driven adapter and covered by mocked tests. This boundary is designed so additional ESPN-backed leagues can reuse the same lifecycle, filtering, display, and trigger behavior.
+The MLB Stats API is an official public feed. ESPN's NFL schedule and scoreboard endpoints are public but undocumented, so their contracts are isolated behind a league-driven adapter and covered by mocked tests. Favorite-team mode uses the compact team schedule feed; all-team mode uses the current scoreboard. A provider failure only makes the plugin unavailable when every selected league fails.
 
 This plugin complements FiestaBoard's general Sports Scores plugin: it adds MLB, explicit MLB/NFL favorite-team selectors, Note-first formatting, relevance windows, and score/start/final triggers.
 

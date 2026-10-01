@@ -27,6 +27,9 @@ SUPPORTED_LEAGUES = ("MLB", "NFL")
 ESPN_LEAGUES = {
     "NFL": {
         "url": "https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard",
+        "team_schedule_url": (
+            "https://site.api.espn.com/apis/site/v2/sports/football/nfl/teams/{team}/schedule"
+        ),
         "teams_config": "nfl_teams",
         "period_prefix": "Q",
     },
@@ -207,10 +210,12 @@ class TeamScoresPlugin(PluginBase):
         final_max_age = timedelta(hours=max(1, float(self.config.get("final_max_age_hours", 12))))
         games: list[dict[str, Any]] = []
         errors: list[str] = []
+        successful_leagues = 0
 
         for league in leagues:
             try:
                 games.extend(self._fetch_league(league, now, lookahead_days))
+                successful_leagues += 1
             except Exception as exc:
                 # Keep one provider failure from hiding another selected league.
                 logger.exception("%s fetch failed", league)
@@ -222,8 +227,10 @@ class TeamScoresPlugin(PluginBase):
         games.sort(key=self._sort_key)
 
         if not games:
-            if errors:
+            if successful_leagues == 0:
                 return PluginResult(available=False, error="; ".join(errors))
+            if errors:
+                logger.warning("Some team score providers failed: %s", "; ".join(errors))
             data = self._empty_data()
             return PluginResult(available=True, data=data, formatted_lines=self._format_display(data))
 
@@ -344,26 +351,50 @@ class TeamScoresPlugin(PluginBase):
         lookahead_days: int,
     ) -> list[dict[str, Any]]:
         spec = ESPN_LEAGUES[league]
-        params = {
-            "dates": (
-                f"{(now.date() - timedelta(days=1)).strftime('%Y%m%d')}-"
-                f"{(now.date() + timedelta(days=lookahead_days)).strftime('%Y%m%d')}"
-            )
-        }
-        payload = _request_json(str(spec["url"]), params, league)
         favorites = {
             str(team).strip().upper()
             for team in self.config.get(str(spec["teams_config"]), [])
         }
+        payloads: list[dict[str, Any]] = []
+        if favorites:
+            errors: list[str] = []
+            for team in sorted(favorites):
+                try:
+                    payloads.append(
+                        _request_json(
+                            str(spec["team_schedule_url"]).format(team=team.lower()),
+                            {"season": _football_season_year(now)},
+                            f"{league} {team}",
+                        )
+                    )
+                except SportsDataError as exc:
+                    errors.append(str(exc))
+            if not payloads:
+                raise SportsDataError("; ".join(errors))
+            if errors:
+                logger.warning("Some %s team schedules failed: %s", league, "; ".join(errors))
+        else:
+            # ESPN rejects date ranges on this endpoint. Its unfiltered response
+            # is the current scoreboard, which is appropriate for all-team mode.
+            payloads.append(_request_json(str(spec["url"]), {}, league))
+
         games: list[dict[str, Any]] = []
-        events = payload.get("events", [])
-        if not isinstance(events, list):
-            raise SportsDataError(f"{league} returned an unexpected scoreboard")
-        for event in events:
-            if not isinstance(event, dict):
-                continue
-            game = self._parse_espn_game(event, now.tzinfo, league)
-            if game and (not favorites or {game["away_team"], game["home_team"]} & favorites):
+        seen_events: set[str] = set()
+        for payload in payloads:
+            events = payload.get("events", [])
+            if not isinstance(events, list):
+                raise SportsDataError(f"{league} returned an unexpected schedule")
+            for event in events:
+                if not isinstance(event, dict):
+                    continue
+                game = self._parse_espn_game(event, now.tzinfo, league)
+                if not game or (favorites and not {game["away_team"], game["home_team"]} & favorites):
+                    continue
+                event_id = str(game.get("event_id", ""))
+                if event_id and event_id in seen_events:
+                    continue
+                if event_id:
+                    seen_events.add(event_id)
                 games.append(game)
         return games
 
@@ -991,6 +1022,10 @@ def _score_line(game: dict[str, Any], width: int) -> str:
         f"{away}{away_score} {home}{home_score}",
     )
     return next((line for line in candidates if len(line) <= width), _fit(candidates[-1], width))
+
+
+def _football_season_year(now: datetime) -> int:
+    return now.year - 1 if now.month <= 2 else now.year
 
 
 def _request_json(url: str, params: dict[str, Any], provider: str) -> dict[str, Any]:

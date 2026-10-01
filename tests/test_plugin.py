@@ -40,7 +40,7 @@ def test_manifest_and_plugin_id():
     module = load_plugin_module()
     plugin = module.Plugin(manifest())
     assert plugin.plugin_id == "team_scores"
-    assert manifest()["version"] == "1.5.0"
+    assert manifest()["version"] == "1.5.1"
     assert manifest()["settings_schema"]["properties"]["trigger_on_started"]["default"] is True
     assert manifest()["settings_schema"]["properties"]["live_refresh_seconds"]["default"] == 30
     assert manifest()["settings_schema"]["properties"]["live_status_detail"]["default"] == "calm"
@@ -177,7 +177,37 @@ def test_nfl_favorite_and_note_lines():
     assert result.data["series_context"] == "Sunday Night Football"
     assert result.data["context_line"] == "NBC"
     assert all(module._tile_count(line) <= 15 for line in result.formatted_lines[:3])
+    assert request.call_args.args[0] == (
+        "https://site.api.espn.com/apis/site/v2/sports/football/nfl/teams/sea/schedule"
+    )
+    assert request.call_args.kwargs["params"] == {"season": 2026}
+
+
+def test_nfl_all_team_mode_uses_current_scoreboard_without_date_range():
+    module = load_plugin_module()
+    plugin = module.Plugin(manifest())
+    plugin.config = {
+        "leagues": ["NFL"],
+        "nfl_teams": [],
+        "timezone": "UTC",
+    }
+    payload = {"events": [nfl_game("SEA", "SF", "2026-07-14T20:00:00Z")]}
+    with patch.object(module.requests, "get", return_value=response(payload)) as request, patch.object(
+        plugin, "_now", return_value=datetime(2026, 7, 13, 12, tzinfo=timezone.utc)
+    ):
+        result = plugin.fetch_data()
+
+    assert result.available
+    assert result.data["league"] == "NFL"
     assert request.call_args.args[0] == module.ESPN_LEAGUES["NFL"]["url"]
+    assert request.call_args.kwargs["params"] == {}
+
+
+def test_nfl_january_uses_previous_season_schedule():
+    module = load_plugin_module()
+
+    assert module._football_season_year(datetime(2027, 1, 10, tzinfo=timezone.utc)) == 2026
+    assert module._football_season_year(datetime(2027, 3, 1, tzinfo=timezone.utc)) == 2027
 
 
 def test_recent_final_ranks_ahead_of_upcoming_game():
@@ -533,6 +563,50 @@ def test_one_provider_can_fail_without_hiding_another_league():
         result = plugin.fetch_data()
     assert result.available
     assert result.data["league"] == "MLB"
+
+
+def test_empty_offseason_league_does_not_hide_working_nfl():
+    module = load_plugin_module()
+    plugin = module.Plugin(manifest())
+    plugin.config = {"leagues": ["MLB", "NFL"], "timezone": "UTC"}
+    game = trigger_game("NFL", "1", "scheduled", "", "")
+    with patch.object(plugin, "_fetch_league", side_effect=[[], [game]]):
+        result = plugin.fetch_data()
+
+    assert result.available
+    assert result.data["league"] == "NFL"
+
+
+def test_one_successful_empty_provider_keeps_plugin_available():
+    module = load_plugin_module()
+    plugin = module.Plugin(manifest())
+    plugin.config = {"leagues": ["MLB", "NFL"], "timezone": "UTC"}
+    with patch.object(
+        plugin,
+        "_fetch_league",
+        side_effect=[[], RuntimeError("scoreboard unavailable")],
+    ):
+        result = plugin.fetch_data()
+
+    assert result.available
+    assert result.data["state"] == "none"
+    assert result.data["line1"] == "SPORTS"
+
+
+def test_all_selected_providers_must_fail_before_plugin_is_unavailable():
+    module = load_plugin_module()
+    plugin = module.Plugin(manifest())
+    plugin.config = {"leagues": ["MLB", "NFL"], "timezone": "UTC"}
+    with patch.object(
+        plugin,
+        "_fetch_league",
+        side_effect=[RuntimeError("schedule unavailable"), RuntimeError("scoreboard unavailable")],
+    ):
+        result = plugin.fetch_data()
+
+    assert not result.available
+    assert "MLB: schedule unavailable" in result.error
+    assert "NFL: scoreboard unavailable" in result.error
 
 
 def test_invalid_provider_json_is_reported():
